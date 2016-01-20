@@ -1,0 +1,34 @@
+General Information
+===================
+
+This is the first version of setop. setop is a small console program for parsing input files and streams for string elements and applying several set operations and special queries.
+
+setop is written from scratch in C++ with extensive use of the std and the boost library. It is developed under and mainly for Linux, but has no OS specific limitations.
+
+
+
+Installation
+============
+
+setop requires boost >= 1.54, actually libboost-program-options-dev and libboost-regex-dev, and a nearly full C++11 support from the compiler.
+
+Simple install procedure:
+% make
+  [ Become root if necessary ]
+% make install
+
+Otherwise, if you only want to compile, just type:
+% make setop
+
+Or otherwise, if you want to compile “manually”, try something like:
+% g++ src/main.cpp -o setop -lboost_program_options -lboost_regex -std=c++11 -O3
+
+
+Usage
+=====
+
+For information on how to use setop, just type
+% setop -h
+or
+% man setop
+after installing.
