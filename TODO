@@ -1,7 +1,8 @@
 ====
 TODO
 ====
-- nothing to do :-)
+- move options into description; or: options with hints, after that description
+- rework output of --help by using another format
 
 
 =================

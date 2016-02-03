@@ -297,8 +297,8 @@ int execute_setop(int argc, char* argv[])
 //	po::options_description visible_options("Allowed options");
 	po::options_description visible_options("Options");
 	visible_options.add_options()
-		("help,h", "produce help message")
-		("version,v", "output name and version")
+		("help", "produce this help message and exit")
+		("version", "output name and version")
 		("quiet", po::bool_switch(&quiet)->default_value(false), "suppress all output messages in case of special queries (e. g. when check if element is contained in set)")
 		("verbose", po::bool_switch(&verbose)->default_value(false), "always use output messages in case of special queries (i. e. also output message on success)")
 
