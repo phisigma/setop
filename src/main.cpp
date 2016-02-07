@@ -32,7 +32,7 @@ You can find a copy of the GNU General Public License at <http://www.gnu.org/lic
 
 /**
 \file
-\brief Programm for parsing input files and streams for string elements and applying several set operations and special queries
+\brief Program for parsing input files and streams for string elements and applying several set operations and special queries
 \details For details how to use the program start it with -h and see help text.
 \author Frank Stähr
 \date Oct., 1st, 2015
@@ -339,7 +339,7 @@ int execute_setop(int argc, char* argv[])
 	catch (po::error const& poexc)
 	{
 		return print_error(std::string("Failed to process commandline parameters: ") + poexc.what() +
-			"\nTry calling the programm with --help.");
+			"\nTry calling the program with --help.");
 	}
 
 	if (opt_map.count("help"))
@@ -364,7 +364,7 @@ int execute_setop(int argc, char* argv[])
 			"the set itself, or its number of elements, or a comparision to another set (option -e), etc.\n\n"
 
 			"By default each line of an input stream is considered to be an element, you can change this by defining regular expressions "
-			"within the options --input-separator or --input-element. When using both, the input stream is first splitted according to the separator "
+			"within the options --input-separator or --input-element. When using both, the input stream is first split according to the separator "
 			"and after that filtered by the desired input element form. "
 			"After finding the elements they are finally trimmed according to the argument given with --trim.\n"
 			"The option -C lets you treat Word and WORD equal, only the first occurance of all input streams is considered. "
