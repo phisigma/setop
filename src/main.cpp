@@ -73,7 +73,7 @@ typedef std::set<element_t, el_comp_t> set_t;
 class InputOptions
 {
 public:
-	el_comp_t element_comp; ///< comparator for set elements (e. g. case insensitive comparison)
+	el_comp_t element_comp; ///< comparator for set elements (e. g. case-insensitive comparison)
 	bool include_empty_elements; ///< empty input elements are included instead of ignored
 	boost::regex input_element_regex; ///< regular expression describing an input element (use boost instead of std because match_partial is needed)
 	boost::regex input_separator_regex; ///< regular expression describing an input separator
@@ -302,7 +302,7 @@ int execute_setop(int argc, char* argv[])
 		("quiet", po::bool_switch(&quiet)->default_value(false), "suppress all output messages in case of special queries (e. g. when check if element is contained in set)")
 		("verbose", po::bool_switch(&verbose)->default_value(false), "always use output messages in case of special queries (i. e. also output message on success)")
 
-		("ignore-case,C", po::bool_switch(&ignore_case)->default_value(false), "handle input elements case-insensitiv")
+		("ignore-case,C", po::bool_switch(&ignore_case)->default_value(false), "handle input elements case-insensitive")
 		("include-empty", po::bool_switch(&input_opts.include_empty_elements)->default_value(false), "don’t ignore empty elements (these can come from empty lines, trimming, etc.)")
 		("input-separator,n", po::value(&separator_format), "describe the form of an input separator as regular expression in ECMAScript syntax; "
 			"default is new line (if --input-element is not given); don’t forget to include the new line character \\n when you set the input separator manually, when desired!")
@@ -338,7 +338,7 @@ int execute_setop(int argc, char* argv[])
 	}
 	catch (po::error const& poexc)
 	{
-		return print_error(std::string("Failed to process commandline parameters: ") + poexc.what() +
+		return print_error(std::string("Failed to process command line parameters: ") + poexc.what() +
 			"\nTry calling the program with --help.");
 	}
 
@@ -355,25 +355,25 @@ int execute_setop(int argc, char* argv[])
 
 			<< visible_options
 
-			<< "No inputfilename or \"-\" is equal to reading from standard input.\n\n"
+			<< "No input filename or \"-\" is equal to reading from standard input.\n\n"
 
 			<< "\nThe sequence of events of " PROGRAM_NAME " is as follows:\n"
 			"At first, all input files are parsed and combined according to one of the options -u, -i, or -s. "
 			"After that, all inputs from option -d are parsed and removed from result of first step. "
 			"Finally, the desired output is printed to screen: "
-			"the set itself, or its number of elements, or a comparision to another set (option -e), etc.\n\n"
+			"the set itself, or its number of elements, or a comparison to another set (option -e), etc.\n\n"
 
 			"By default each line of an input stream is considered to be an element, you can change this by defining regular expressions "
 			"within the options --input-separator or --input-element. When using both, the input stream is first split according to the separator "
 			"and after that filtered by the desired input element form. "
 			"After finding the elements they are finally trimmed according to the argument given with --trim.\n"
-			"The option -C lets you treat Word and WORD equal, only the first occurance of all input streams is considered. "
+			"The option -C lets you treat Word and WORD equal, only the first occurrence of all input streams is considered. "
 			"Note that -C does not affect the regular expressions used in --input-separator and --input-element.\n\n"
 
 			"When describing strings and characters for the output separator or for the option --trim you can use escape sequences like "  R"(\t, \n, \" and \'. )"
 			"But be aware that some of these sequences "  R"((especially \\ and \"))"  " might be interpreted by your shell before passing the string to "
 			PROGRAM_NAME ". In that case you have to use "  R"(\\\\ respectively \\\" just for describing a \ or a ". )"
-			"You can check your shell’s behaviour with\n"
+			"You can check your shell’s behavior with\n"
 			R"(echo "\\ and \"")"  "\n\n"
 
 			"Special boolean queries (e. g. check if element is contained in set) don’t return anything in case of success except their exit code 0. "
@@ -459,7 +459,7 @@ int execute_setop(int argc, char* argv[])
 		return print_error("\"" + (error_in_element_regex ? element_format : separator_format) + "\" is not a valid regular expression.");
 	}
 
-	// handle case insensitive
+	// handle case-insensitive
 	if (ignore_case)
 		input_opts.element_comp = std::bind(
 			boost::algorithm::ilexicographical_compare<element_t, element_t>, std::placeholders::_1, std::placeholders::_2, std::locale()
@@ -614,7 +614,7 @@ int main(int argc, char* argv[])
 	// no more memory for more elements, or one element is too large because of faulty regular expression
 	catch (std::bad_alloc const&)
 	{
-		return print_error("Not enough memory availible. Input data could be too large, or input element or separator regex could be erroneous.");
+		return print_error("Not enough memory available. Input data could be too large, or input element or separator regex could be erroneous.");
 	}
 #ifndef _DEBUG
 	catch (std::exception const& exc)
@@ -623,7 +623,7 @@ int main(int argc, char* argv[])
 	}
 	catch (...)
 	{
-		return print_error("Unknown error occured.");
+		return print_error("Unknown error occurred.");
 	}
 #endif
 	
