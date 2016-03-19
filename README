@@ -32,3 +32,33 @@ For information on how to use setop, just type
 or
 % man setop
 after installing.
+
+
+Packaging for Debian
+====================
+
+In February 2016 I tried to package setop for the Debian repository, but it wasn’t accepted, see <https://lists.debian.org/debian-mentors/2016/02/msg00042.html>.
+
+You can use the files in the directory debian for creating a deb file by applying the following steps:
+
+# at first, download the sources from Github <https://github.com/phisigma/setop>
+
+# after that, unpack them and move them into a directory with name setop-0.1
+% unzip setop-master.zip
+% mv setop-master setop-0.1
+
+# gzip sources in Debian convention
+% tar -zcvf setop_0.1.orig.tar.gz setop-0.1 --exclude setop-0.1/debian
+
+# build package
+% cd setop-0.1
+% dpkg-buildpackage -sa -us -uc
+# or otherwise, if you even want to sign it
+% dpkg-buildpackage -sa
+% cd ..
+
+# now you can install, distribute, and/or test the package (become root if necessary)
+% dpkg -i setop_0.1-1_amd64.deb
+
+# or if you want, you can upload it to Debian
+% dput mentors setop_0.1-1_amd64.changes

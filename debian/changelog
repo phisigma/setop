@@ -1,0 +1,6 @@
+setop (0.1-1) unstable; urgency=low
+
+  * Initial release. Closes: #813485
+  * This is my first Debian package.
+
+ -- Frank Stähr <der-storch-85@gmx.net>  Wed, 03 Feb 2016 10:04:35 +0100

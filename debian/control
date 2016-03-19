@@ -1,0 +1,24 @@
+Source: setop
+Section: utils
+Priority: optional
+Maintainer: Frank Stähr <der-storch-85@gmx.net>
+Build-Depends: debhelper (>= 9), libboost-all-dev (>= 1.54), libboost-program-options-dev (>= 1.54), libboost-regex-dev (>= 1.54), help2man (>= 1.44)
+Standards-Version: 3.9.6
+Homepage: https://github.com/phisigma/setop
+Vcs-Git: git://github.com/phisigma/setop.git
+Vcs-Browser: https://github.com/phisigma/setop
+
+Package: setop
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: apply set operations like intersection to text inputs
+ setop is a simple console utility for handling multiple inputs from files or
+ other streams as mathematical sets. That is you can apply typical set
+ operations like union, intersection, or set difference and print a resulting
+ set (sorted and with unique string elements) to standard output or you can give
+ answer to special queries like number of elements.
+ .
+ Besides the default line-based parsing there are several options for choosing
+ input sets and identifying set elements, and there are also several options for
+ the type of output, e. g. it is possible to check for set equality or to check
+ if one set is a subset of another.

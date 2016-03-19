@@ -376,9 +376,9 @@ int execute_setop(int argc, char* argv[])
 			"You can check your shell’s behavior with\n"
 			R"(echo "\\ and \"")"  "\n\n"
 
-			"Special boolean queries (e. g. check if element is contained in set) don’t return anything in case of success except their exit code 0. "
-			"In case the query is unsuccessful (e. g. element not contained in set) the exit code is guaranteed to be unequal to EXIT_SUCCESS ("
-			<< std::to_string(EXIT_SUCCESS) << ") and to EXIT_FAILURE (" << std::to_string(EXIT_FAILURE) << "). (Here it is "
+			"Special boolean queries (e. g. check if element is contained in set) don’t return anything in case of success except their exit code EXIT_SUCCESS ("
+			<< std::to_string(EXIT_SUCCESS) << "). In case the query is unsuccessful (e. g. element not contained in set) the exit code is guaranteed "
+			<< "to be unequal to EXIT_SUCCESS and to EXIT_FAILURE (" << std::to_string(EXIT_FAILURE) << "). (Here it is "
 			<< std::to_string(EXIT_QUERY_NEGATIVE) << ".) This way, " PROGRAM_NAME " can be used in the shell.\n\n"
 
 			"Examples:\n"
