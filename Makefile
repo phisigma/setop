@@ -1,18 +1,20 @@
 PROGNAME := setop
 
-CXXFLAGS = -std=c++11 -O3
-LDFLAGS = -lboost_program_options -lboost_regex
+.PHONY: all, clean
+
+CXXFLAGS += -std=c++11 -O3
+LIBS += -lboost_program_options -lboost_regex
 SOURCES = src/main.cpp
 
 # where to put executable and manpage on 'make install'
-BIN = $(DESTDIR)/usr/bin
-HELP = $(DESTDIR)/usr/share/man/man1
+BIN ?= $(DESTDIR)/usr/bin
+HELP ?= $(DESTDIR)/usr/share/man/man1
 
 
 all: $(PROGNAME) man
 
 $(PROGNAME): $(SOURCES)
-	$(CXX) $(CXXFLAGS) $(SOURCES) $(LDFLAGS) -o $(PROGNAME)
+	$(CXX) $(CXXFLAGS) $(SOURCES) $(LDFLAGS) $(LIBS) -o $(PROGNAME)
 
 clean:
 	@echo "Clean."

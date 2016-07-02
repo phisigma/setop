@@ -37,8 +37,6 @@ after installing.
 Packaging for Debian
 ====================
 
-In February 2016 I tried to package setop for the Debian repository, but it wasn’t accepted, see <https://lists.debian.org/debian-mentors/2016/02/msg00042.html>.
-
 You can use the files in the directory debian for creating a deb file by applying the following steps:
 
 # at first, download the sources from Github <https://github.com/phisigma/setop>

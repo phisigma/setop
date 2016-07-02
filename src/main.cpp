@@ -83,7 +83,7 @@ public:
 
 
 /**
-\brief Parses escape sequences like \\n and \\t to real characters (e. g. .\\'\\\\\\" gets .'\\")
+\brief Parses escape sequences like \\n and \\t to “real” characters (e. g. .\\'\\\\\\" gets .'\\")
 \details Escape sequences \\', \\", \?, \\\\, \\f, \\n, \\r, \\t, \\v are supported.
 \param escape_seq sequence to unescape
 \note There should be a std or boost library for a simple task like unescaping, but it seems that there isn’t (yet).
@@ -315,7 +315,7 @@ int execute_setop(int argc, char* argv[])
 		("symmetric-difference,s", "build symmetric difference for all given input sets")
 		("difference,d", po::value(&setdifference_filenames)->composing(), "subtract all elements in given file from output set")
 
-		("cardinality,#", "just output number of (different) elements, don’t list them")
+		("count,#", "just output number of (different) elements, don’t list them")
 		("is-empty", "check if resulting set is empty")
 		("contains,c", po::value(&element_to_check), "check if given element is contained in set")
 		("equal,e", po::value(&equal_filename), "check set equality, i. e. check if output corresponds with content of file")
@@ -416,11 +416,11 @@ int execute_setop(int argc, char* argv[])
 		opt_map.count("symmetric-difference") ? SetConcat::SYM_DIFFERENCE :
 		SetConcat::UNION;
 
-	if (opt_map.count("cardinality") + opt_map.count("is-empty") + opt_map.count("subset")
+	if (opt_map.count("count") + opt_map.count("is-empty") + opt_map.count("subset")
 		+ opt_map.count("superset") + opt_map.count("contains") + opt_map.count("equal") > 1)
-		return print_error("Only one of the options cardinality, is-empty, subset, superset, contains, and equal is allowed.");
+		return print_error("Only one of the options count, is-empty, subset, superset, contains, and equal is allowed.");
 	SetQuery set_query_type =
-		opt_map.count("cardinality") ? SetQuery::CARDINALITY :
+		opt_map.count("count") ? SetQuery::CARDINALITY :
 		opt_map.count("is-empty") ? SetQuery::ISEMPTY :
 		opt_map.count("subset") ? SetQuery::SUBSET :
 		opt_map.count("superset") ? SetQuery::SUPERSET :

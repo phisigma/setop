@@ -10,7 +10,7 @@ POSSIBLE FEATURES
 =================
 - query "pairwise disjoint"
 - option reversed output
-- string comparision based on local preferences (LC_ALL??) instead of just default
+- string comparison based on local preferences (LC_ALL??) instead of just default
 - query power set
 - give out cartesian product of input sets
 - give out minimum or maximum of output set
