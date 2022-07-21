@@ -2,7 +2,7 @@ Source: setop
 Section: utils
 Priority: optional
 Maintainer: Frank Stähr <der-storch-85@gmx.net>
-Build-Depends: debhelper-compat (= 12), libboost-dev (>= 1.54), libboost-program-options-dev (>= 1.54), libboost-regex-dev (>= 1.54), help2man
+Build-Depends: debhelper-compat (= 12), libboost-dev, libboost-program-options-dev, libboost-regex-dev, help2man
 Standards-Version: 3.9.8
 Homepage: https://github.com/phisigma/setop
 Vcs-Git: https://github.com/phisigma/setop.git
