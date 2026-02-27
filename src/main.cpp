@@ -54,7 +54,7 @@ using element_t = std::string; ///< basic type of element in sets, must base on 
 using el_comp_t = std::function<bool(element_t const&, element_t const&)>; ///< type of function for comparing elements
 /**
 \brief basic type for sets
-\details a hash set would be faster, but
+\details A hash set would be faster, but:
  - even with 1,000,000 elements only about with factor 1.7 or 1.8 (depending on several other influences)
  - no advantage in memory saving
  - output is not sorted (at least one more option necessary for letting user to decide if this is acceptable)
@@ -68,7 +68,7 @@ class InputOptions
 public:
 	el_comp_t element_comp; ///< comparator for set elements (e. g. case-insensitive comparison)
 	bool include_empty_elements; ///< empty input elements are included instead of ignored
-	boost::regex input_element_regex; ///< regular expression describing an input element (use boost instead of std because match_partial is needed)
+	boost::regex input_element_regex; ///< regular expression describing an input element (use `boost` instead of `std` because `match_partial` is needed)
 	boost::regex input_separator_regex; ///< regular expression describing an input separator
 	std::string output_separator; ///< string elements shall be separated with in output
 	std::string trim_characters; ///< list of characters that shall be ignored in element at begin and end
@@ -76,10 +76,10 @@ public:
 
 
 /**
-\brief Parses escape sequences like \\n and \\t to “real” characters (e. g. .\\'\\\\\\" gets .'\\")
-\details Escape sequences \\', \\", \?, \\\\, \\f, \\n, \\r, \\t, \\v are supported.
+\brief Parses escape sequences like `\n` and `\t` to “real” characters (e. g. ``.\'\\\"`` gets to ``.'\"``).
+\details Escape sequences ``\'``, `\"`, `\?`, `\\`, `\f`, `\n`, `\r`, `\t`, `\v` are supported.
 \param escape_seq sequence to unescape
-\note There should be a std or boost library for a simple task like unescaping, but it seems that there isn’t (yet).
+\note There should be an `std` or `boost` library for a simple task like unescaping, but it seems that there isn’t (yet).
 	Replace this function in the future if possible.
 \throws std::invalid_argument
 */
@@ -199,10 +199,8 @@ set_t file_to_set(std::string const& filename)
 	bool use_separator_regex = input_opts.input_element_regex.empty();
 	boost::regex const& regex = (use_separator_regex ? input_opts.input_separator_regex : input_opts.input_element_regex);
 
-	/**
-	 * effect of value of initial buffer size is practically unmeasurable, so just take a nice value of form 2^n,
-	 * at least it should be much bigger than expected size of elements
-	 */
+	// effect of value of initial buffer size is practically unmeasurable, so just take a nice value of form 2^n,
+	// at least it should be much bigger than expected size of elements
 	std::size_t buffersize = 4096;
 	std::size_t used_buffer = 0;
 	// use unique pointer instead of "plain" pointer so that there is no memory leak in case of exception
@@ -265,9 +263,9 @@ set_t file_to_set(std::string const& filename)
 }
 
 /**
-\brief Prints complete error message to console (std::cerr) including hint, that this is an error.
+\brief Prints complete error message to console `std::cerr` including hint, that this is an error.
 \param error_message error message without new line at end
-\return Exit code EXIT_FAILURE (normally 1)
+\return exit code `EXIT_FAILURE` (normally 1)
 */
 inline int print_error(std::string const& error_message)
 {
@@ -276,7 +274,7 @@ inline int print_error(std::string const& error_message)
 }
 
 /**
-\brief Main function of program: Take command line options and arguments and execute output.
+\brief Main function of program: take command line options and arguments and execute output.
 \throws std::runtime_error
 */
 int execute_setop(int argc, char* argv[])

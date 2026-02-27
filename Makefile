@@ -29,6 +29,5 @@ install: $(PROGNAME) man
 man: $(PROGNAME)
 	help2man -n "make set of strings from input" -N -L en_US.UTF-8 ./$(PROGNAME) | gzip > $(PROGNAME).1
 
-# not needed:
-#documentation: $(SOURCES) doxyconfig
-#	doxygen doxyconfig
+documentation: $(SOURCES) doxygen-config
+	doxygen doxygen-config
