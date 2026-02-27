@@ -2,7 +2,7 @@ PROGNAME := setop
 
 .PHONY: all, clean
 
-CXXFLAGS += -std=c++11 -O3
+CXXFLAGS += -std=c++23 -O3
 LIBS += -lboost_program_options -lboost_regex
 SOURCES = src/main.cpp
 

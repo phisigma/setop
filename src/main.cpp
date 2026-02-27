@@ -33,7 +33,7 @@ You can find a copy of the GNU General Public License at <http://www.gnu.org/lic
 /**
 \file
 \brief Program for parsing input files and streams for string elements and applying several set operations and special queries
-\details For details how to use the program start it with -h and see help text.
+\details For details how to use the program start it with `--help` and see help text.
 \author Frank Stähr
 \date Oct., 1st, 2015
 */
@@ -42,23 +42,16 @@ You can find a copy of the GNU General Public License at <http://www.gnu.org/lic
 #define PROGRAM_VERSION "0.1" ///< version of setop
 /** \brief used when query has negative result (e. g. element not part of input), but program flow has no (other) error */
 #define EXIT_QUERY_NEGATIVE 3
-#if ((EXIT_QUERY_NEGATIVE == EXIT_SUCCESS) || (EXIT_QUERY_NEGATIVE == EXIT_FAILURE))
-	#error Macro EXIT_QUERY_NEGATIVE must not be equal to EXIT_SUCCESS or to EXIT_FAILURE.
-#endif
-/**
-\brief initial size for buffer when input file is read and parsed by regular expression for element search
-\details effect of this variable is practically unmeasurable, so just take a nice value of form 2^n,
-	at least it should be much bigger than expected size of elements
-*/
-#define INITIAL_BUFFERSIZE 4096
+static_assert((EXIT_QUERY_NEGATIVE != EXIT_SUCCESS) && (EXIT_QUERY_NEGATIVE != EXIT_FAILURE),
+	"Macro EXIT_QUERY_NEGATIVE must not be equal to EXIT_SUCCESS or to EXIT_FAILURE.");
 
 /** \brief all possible commutative set operations */
 enum class SetConcat : unsigned char { UNION, INTERSECTION, SYM_DIFFERENCE };
 /** \brief types of different return possibilities for program */
 enum class SetQuery : unsigned char { RETURN_SET, CARDINALITY, ISEMPTY, SUBSET, SUPERSET, CONTAINS_ELEMENT, SET_EQUALITY };
 
-typedef std::string element_t; ///< basic type of element in sets, must base on character type char
-typedef std::function<bool(element_t const&, element_t const&)> el_comp_t; ///< type of function for comparing elements
+using element_t = std::string; ///< basic type of element in sets, must base on character type char
+using el_comp_t = std::function<bool(element_t const&, element_t const&)>; ///< type of function for comparing elements
 /**
 \brief basic type for sets
 \details a hash set would be faster, but
@@ -67,7 +60,7 @@ typedef std::function<bool(element_t const&, element_t const&)> el_comp_t; ///< 
  - output is not sorted (at least one more option necessary for letting user to decide if this is acceptable)
  - much more source code (sorted/unsorted output; overhead for case-insensitive hash function etc.)
 */
-typedef std::set<element_t, el_comp_t> set_t;
+using set_t = std::set<element_t, el_comp_t>;
 
 /** \brief Encapsulates all options for reading and parsing input streams. */
 class InputOptions
@@ -143,7 +136,7 @@ set_t file_to_set(std::string const& filename)
 	{
 		inputfile.open(filename);
 		if (!inputfile)
-			throw std::runtime_error("Input file " + filename + " could not be opened.");
+			throw std::runtime_error("input file '" + filename + "' could not be opened.");
 	}
 	std::istream& inputstream = (filename == "-" ? std::cin : inputfile);
 
@@ -151,7 +144,7 @@ set_t file_to_set(std::string const& filename)
 	auto adjust_and_insert_element = [&result](element_t el_str, bool check_element_regex = false)
 	{
 		if (!check_element_regex || input_opts.input_element_regex.empty() ||
-			boost::regex_match(el_str.begin(), el_str.end(), input_opts.input_element_regex, boost::match_default))
+			boost::regex_match(el_str, input_opts.input_element_regex))
 		{
 			boost::trim_if(el_str, boost::is_any_of(input_opts.trim_characters));
 			if (!el_str.empty() || input_opts.include_empty_elements)
@@ -206,7 +199,11 @@ set_t file_to_set(std::string const& filename)
 	bool use_separator_regex = input_opts.input_element_regex.empty();
 	boost::regex const& regex = (use_separator_regex ? input_opts.input_separator_regex : input_opts.input_element_regex);
 
-	std::size_t buffersize = INITIAL_BUFFERSIZE;
+	/**
+	 * effect of value of initial buffer size is practically unmeasurable, so just take a nice value of form 2^n,
+	 * at least it should be much bigger than expected size of elements
+	 */
+	std::size_t buffersize = 4096;
 	std::size_t used_buffer = 0;
 	// use unique pointer instead of "plain" pointer so that there is no memory leak in case of exception
 	std::unique_ptr<char[]> buffer(new char[buffersize]);
@@ -342,7 +339,7 @@ int execute_setop(int argc, char* argv[])
 			"\nTry calling the program with --help.");
 	}
 
-	if (opt_map.count("help"))
+	if (opt_map.contains("help"))
 	{
 		std::cout <<
 			"Apply set operations like union, intersection, or set difference to input files "
@@ -394,7 +391,7 @@ int execute_setop(int argc, char* argv[])
 		return EXIT_SUCCESS;
 	}
 
-	if (opt_map.count("version"))
+	if (opt_map.contains("version"))
 	{
 		std::cout << PROGRAM_NAME << " " << PROGRAM_VERSION << std::endl;
 		return EXIT_SUCCESS;
@@ -412,20 +409,20 @@ int execute_setop(int argc, char* argv[])
 	if (opt_map.count("union") + opt_map.count("intersection") + opt_map.count("symmetric-difference") > 1)
 		return print_error("Only one of the set operations union, intersection, and symmetric difference must be used.");
 	SetConcat set_concat_type =
-		opt_map.count("intersection") ? SetConcat::INTERSECTION :
-		opt_map.count("symmetric-difference") ? SetConcat::SYM_DIFFERENCE :
+		opt_map.contains("intersection") ? SetConcat::INTERSECTION :
+		opt_map.contains("symmetric-difference") ? SetConcat::SYM_DIFFERENCE :
 		SetConcat::UNION;
 
 	if (opt_map.count("count") + opt_map.count("is-empty") + opt_map.count("subset")
 		+ opt_map.count("superset") + opt_map.count("contains") + opt_map.count("equal") > 1)
 		return print_error("Only one of the options count, is-empty, subset, superset, contains, and equal is allowed.");
 	SetQuery set_query_type =
-		opt_map.count("count") ? SetQuery::CARDINALITY :
-		opt_map.count("is-empty") ? SetQuery::ISEMPTY :
-		opt_map.count("subset") ? SetQuery::SUBSET :
-		opt_map.count("superset") ? SetQuery::SUPERSET :
-		opt_map.count("contains") ? SetQuery::CONTAINS_ELEMENT :
-		opt_map.count("equal") ? SetQuery::SET_EQUALITY :
+		opt_map.contains("count") ? SetQuery::CARDINALITY :
+		opt_map.contains("is-empty") ? SetQuery::ISEMPTY :
+		opt_map.contains("subset") ? SetQuery::SUBSET :
+		opt_map.contains("superset") ? SetQuery::SUPERSET :
+		opt_map.contains("contains") ? SetQuery::CONTAINS_ELEMENT :
+		opt_map.contains("equal") ? SetQuery::SET_EQUALITY :
 		SetQuery::RETURN_SET;
 
 	// parse escape sequences of trim characters and output separator to "real" characters (e. g. ".\'\\" gets ".'\")
@@ -443,20 +440,22 @@ int execute_setop(int argc, char* argv[])
 	// separator "\n" is default when nothing else is given
 	if (element_format.empty() && separator_format.empty())
 		separator_format = "\\n";
-
-	bool error_in_element_regex = true;
-	try
+	for (auto [string_to_parse, resulting_regex_ref] : std::vector<std::pair<std::string const&, boost::regex&>>{
+		{element_format, input_opts.input_element_regex},
+		{separator_format, input_opts.input_separator_regex}})
 	{
 		boost::regex::flag_type regex_flags = boost::regex_constants::ECMAScript | boost::regex_constants::optimize /*| (ignore_case ? boost::regex_constants::icase : 0)*/;
-		if (!element_format.empty())
-			input_opts.input_element_regex = boost::regex(element_format, regex_flags);
-		error_in_element_regex = false;
-		if (!separator_format.empty())
-			input_opts.input_separator_regex = boost::regex(separator_format, regex_flags);
-	}
-	catch (boost::regex_error)
-	{
-		return print_error("\"" + (error_in_element_regex ? element_format : separator_format) + "\" is not a valid regular expression.");
+		if (!string_to_parse.empty())
+		{
+			try
+			{
+				resulting_regex_ref = boost::regex(string_to_parse, regex_flags);
+			}
+			catch (boost::regex_error const&)
+			{
+				return print_error("\"" + string_to_parse + "\" is not a valid regular expression.");
+			}
+		}
 	}
 
 	// handle case-insensitive
@@ -490,13 +489,13 @@ int execute_setop(int argc, char* argv[])
 			switch (set_concat_type)
 			{
 			case SetConcat::UNION:
-				output_set.insert(curr_set.begin(), curr_set.end());
+				output_set.merge(std::move(curr_set));
 				break;
 			case SetConcat::INTERSECTION:
 			{
 				set_t intersect(input_opts.element_comp);
 				for (element_t const& el : output_set)
-					if (curr_set.find(el) != curr_set.end())
+					if (curr_set.contains(el))
 						intersect.insert(el);
 
 				output_set = std::move(intersect);
@@ -529,7 +528,7 @@ int execute_setop(int argc, char* argv[])
 	// STEP 3/3: calculate output depending on set query
 
 	// print success and failure messages from query and return exit code of program
-	auto answer_query = [quiet, verbose](bool success, std::string success_msg, std::string unsuccess_msg) -> int
+	auto answer_query = [quiet, verbose](bool success, std::string const& success_msg, std::string const& unsuccess_msg) -> int
 	{
 		if (success)
 		{
@@ -562,7 +561,7 @@ int execute_setop(int argc, char* argv[])
 	case SetQuery::CONTAINS_ELEMENT:
 		boost::trim_if(element_to_check, boost::is_any_of(input_opts.trim_characters));
 		return answer_query(
-			output_set.find(element_to_check) != output_set.end(),
+			output_set.contains(element_to_check),
 			"\"" + element_to_check + "\" is contained in set.\n",
 			"Input does not contain element \"" + element_to_check + "\".\n");
 	case SetQuery::SET_EQUALITY:
@@ -571,23 +570,15 @@ int execute_setop(int argc, char* argv[])
 			"Resulting set is equal to input \"" + equal_filename + "\".\n",
 			"Resulting set is not equal to input \"" + equal_filename + "\".\n");
 	case SetQuery::SUBSET:
-	{
-		set_t set_to_check = file_to_set(subset_filename);
 		return answer_query(
-			std::all_of(set_to_check.begin(), set_to_check.end(),
-				[&output_set](element_t const& str) { return output_set.find(str) != output_set.end(); }),
+			std::ranges::includes(output_set, file_to_set(subset_filename)),
 			"\"" + subset_filename + "\" is a subset.\n",
 			"\"" + subset_filename + "\" is not a subset.\n");
-	}
 	case SetQuery::SUPERSET:
-	{
-		set_t set_to_check = file_to_set(superset_filename);
 		return answer_query(
-			std::all_of(output_set.begin(), output_set.end(),
-				[&set_to_check](element_t const& str) { return set_to_check.find(str) != set_to_check.end(); }),
+			std::ranges::includes(file_to_set(superset_filename), output_set),
 			"\"" + superset_filename + "\" is a superset.\n",
 			"\"" + superset_filename + "\" is not a superset.\n");
-	}
 	default:
 		// never happens because all cases are handled above
 		return EXIT_FAILURE;
