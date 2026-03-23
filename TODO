@@ -1,8 +1,7 @@
 ====
 TODO
 ====
-- move options into description; or: options with hints, after that description
-- rework output of --help by using another format
+- remove deprecated options (maybe 5 or 10 years after introduction in 2026)
 
 
 =================
@@ -14,13 +13,3 @@ POSSIBLE FEATURES
 - query power set
 - give out cartesian product of input sets
 - give out minimum or maximum of output set
-- new line character not OS specific (std::ifstream::open(..., std::ios::binary))
-
-
-==============
-OPEN QUESTIONS
-==============
-- Set difference: Allow only two inputs?
-- Should option --ignore-case affect the regular expressions used in --input-separator and --input-element?
-- How to connect parameters to their corresponding options: --superset=filename, --superset filename; -p=filename, -p filename?
-- What possible features should be discarded?
