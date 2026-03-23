@@ -274,6 +274,17 @@ inline int print_error(std::string const& error_message)
 }
 
 /**
+\brief Prints complete error message to console `std::cerr` that an option used a faulty parameter.
+\param option option with faulty parameter, i. e. `combination` or `output` (without minus signs)
+\param parameter faulty parameter (e. g. `intersect` instead of `intersection`)
+\return exit code `EXIT_FAILURE` (normally 1)
+*/
+inline int print_unsupported_parameter_error(std::string const& option, std::string const& parameter)
+{
+	return print_error("option '--" + option + "' does not support a parameter '" + parameter + "'.");
+}
+
+/**
 \brief Main function of program: take command line options and arguments and execute output.
 \throws std::runtime_error
 */
@@ -281,46 +292,59 @@ int execute_setop(int argc, char* argv[])
 {
 	// needed variables, mainly options and arguments from command line
 	bool quiet, verbose, ignore_case;
-	element_t element_to_check;
-	std::string subset_filename, superset_filename, equal_filename, element_format, separator_format;
-	std::vector<std::string> input_filenames, setdifference_filenames;
+	std::string combination_type, additional_output_parameter, separator_format, element_format;
+	std::vector<std::string> input_filenames, setdifference_filenames, output_parameters;
 
 
 	// PARSE COMMAND LINE
 
 	namespace po = boost::program_options;
-//	po::options_description visible_options("Allowed options");
 	po::options_description visible_options("Options");
 	visible_options.add_options()
 		("help", "produce this help message and exit")
 		("version", "output name and version")
-		("quiet", po::bool_switch(&quiet)->default_value(false), "suppress all output messages in case of special queries (e. g. when check if element is contained in set)")
-		("verbose", po::bool_switch(&verbose)->default_value(false), "always use output messages in case of special queries (i. e. also output message on success)")
 
 		("ignore-case,C", po::bool_switch(&ignore_case)->default_value(false), "handle input elements case-insensitive")
 		("include-empty", po::bool_switch(&input_opts.include_empty_elements)->default_value(false), "don’t ignore empty elements (these can come from empty lines, trimming, etc.)")
 		("input-separator,n", po::value(&separator_format), "describe the form of an input separator as regular expression in ECMAScript syntax; "
-			"default is new line (if --input-element is not given); don’t forget to include the new line character \\n when you set the input separator manually, when desired!")
+			"defaults to new line only if --input-element is not present; i. e. don’t forget to include the new line character \\n when you set the input element manually, when desired!")
 		("input-element,l", po::value(&element_format), "describe the form of input elements as regular expression in ECMAScript syntax")
 		("output-separator,o", po::value(&input_opts.output_separator)->default_value("\\n"), "string for separating output elements; escape sequences are allowed")
 		("trim,t", po::value(&input_opts.trim_characters), "trim all given characters at beginning and end of elements (escape sequences allowed)")
 
-		("union,u", "unite all given input sets (default)")
-		("intersection,i", "unite all given input sets")
-		("symmetric-difference,s", "build symmetric difference for all given input sets")
-		("difference,d", po::value(&setdifference_filenames)->composing(), "subtract all elements in given file from output set")
+		("combine", po::value(&combination_type)/*->default_value("union")*/, "define combination operation applied to given input streams; "
+			"possible parameters are 'union' (default), 'intersection', and 'symmetric-difference'")
+		("subtract", po::value(&setdifference_filenames)->multitoken(), "subtract all elements of all given streams from output set")
 
-		("count,#", "just output number of (different) elements, don’t list them")
-		("is-empty", "check if resulting set is empty")
-		("contains,c", po::value(&element_to_check), "check if given element is contained in set")
-		("equal,e", po::value(&equal_filename), "check set equality, i. e. check if output corresponds with content of file")
-		("subset,b", po::value(&subset_filename), "check if content of file is subset of output set")
-		("superset,p", po::value(&superset_filename), "check if content of file is superset of output set");
+		("output", po::value(&output_parameters)->multitoken()/*->default_value("set")*/, "whether to output determined set or a certain information of this set instead; "
+			"possible parameters are:\n"
+			"set (default): stream all output elements\n"
+			"count: just output number of (different) elements, don’t list them\n"
+			"is-empty: check if resulting set is empty\n"
+			"contains <element-string>: check if given element is contained in set\n"
+			"equals <input-stream>: check set equality, i. e. check if output corresponds with content of <input-stream>\n"
+			"has-subset <input-stream>: check if content of <input-stream> is subset of output set\n"
+			"has-superset <input-stream>: check if content of <input-stream> is superset of output set")
+		("quiet", po::bool_switch(&quiet)->default_value(false),
+			"suppress all output messages in case of special queries (e. g. when check if element is contained in set)");
 
 	po::options_description invisible_options("Invisible options");
 	invisible_options.add_options()("inputfile", po::value(&input_filenames)->composing(), "");
+	po::options_description deprecated_options("Deprecated options");
+	deprecated_options.add_options()
+		("union,u", "")
+		("intersection,i", "")
+		("symmetric-difference,s", "")
+		("difference,d", po::value(&setdifference_filenames)->composing(), "")
+		("verbose", "")
+		("count,#", "")
+		("is-empty", "")
+		("contains,c", po::value(&additional_output_parameter), "")
+		("equal,e", po::value(&additional_output_parameter), "")
+		("subset,b", po::value(&additional_output_parameter), "")
+		("superset,p", po::value(&additional_output_parameter), "");
 	po::options_description all_options("All options");
-	all_options.add(invisible_options).add(visible_options);
+	all_options.add(invisible_options).add(deprecated_options).add(visible_options);
 
 	po::variables_map opt_map;
 	po::positional_options_description arguments;
@@ -333,8 +357,8 @@ int execute_setop(int argc, char* argv[])
 	}
 	catch (po::error const& poexc)
 	{
-		return print_error(std::string("Failed to process command line parameters: ") + poexc.what() +
-			"\nTry calling the program with --help.");
+		return print_error(std::string("failed to process command line parameters: ") + poexc.what() +
+			"\nTry calling the program with option '--help'.");
 	}
 
 	if (opt_map.contains("help"))
@@ -343,85 +367,140 @@ int execute_setop(int argc, char* argv[])
 			"Apply set operations like union, intersection, or set difference to input files "
 			"and print resulting set (sorted and with unique string elements) to standard output or give answer to special queries like number of elements.\n\n"
 
-			"Usage: "
-			PROGRAM_NAME " [-h] [--quiet | --verbose] [-C] [--include-empty] [-n insepar | -l elregex] [-o outsepar] [-t trimchars] "
-			"[-u|i|s] [inputfilename]* [-d filename]* "
-			"[-# | --is-empty | -c element | -e filename | -b filename | -p filename]\n\n"
+			"Usage:\n"
+			PROGRAM_NAME " [input-stream]* [-C] [--include-empty] [--input-separator <value>] [--input-element <value>] [--trim <value>] "
+			"[--combine union|intersection|symmetric-difference] [--subtract [input-stream]*] "
+			"[--output (set|count|is-empty|contains <value>|equals <input-stream>|has-subset <input-stream>|has-superset <input-stream>)] "
+			"[--output-separator <value>] [--quiet]\n\n"
 
 			<< visible_options
 
-			<< "No input filename or \"-\" is equal to reading from standard input.\n\n"
+			<< "No input filename or '-' is equal to reading from standard input.\n\n"
 
-			<< "\nThe sequence of events of " PROGRAM_NAME " is as follows:\n"
-			"At first, all input files are parsed and combined according to one of the options -u, -i, or -s. "
-			"After that, all inputs from option -d are parsed and removed from result of first step. "
-			"Finally, the desired output is printed to screen: "
-			"the set itself, or its number of elements, or a comparison to another set (option -e), etc.\n\n"
+			<< "The sequence of events of " PROGRAM_NAME " is as follows:\n"
+			"At first, all input files are parsed and combined according to the --combine option. "
+			"After that, all inputs from option --subtract are parsed and removed from result of first step. "
+			"Finally, the desired output given from option --output is printed to screen: "
+			"the set itself, or its number of elements, or a comparison to another set etc.\n\n"
 
 			"By default each line of an input stream is considered to be an element, you can change this by defining regular expressions "
 			"within the options --input-separator or --input-element. When using both, the input stream is first split according to the separator "
 			"and after that filtered by the desired input element form. "
 			"After finding the elements they are finally trimmed according to the argument given with --trim.\n"
-			"The option -C lets you treat Word and WORD equal, only the first occurrence of all input streams is considered. "
-			"Note that -C does not affect the regular expressions used in --input-separator and --input-element.\n\n"
-
+			"The option --ignore-case lets you treat Word and WORD equal, only the first occurrence of all input streams is considered. "
+			"Note that --ignore-case does not affect the regular expressions used in --input-separator and --input-element.\n\n"
 			"When describing strings and characters for the output separator or for the option --trim you can use escape sequences like "  R"(\t, \n, \" and \'. )"
 			"But be aware that some of these sequences "  R"((especially \\ and \"))"  " might be interpreted by your shell before passing the string to "
 			PROGRAM_NAME ". In that case you have to use "  R"(\\\\ respectively \\\" just for describing a \ or a ". )"
 			"You can check your shell’s behavior with\n"
 			R"(echo "\\ and \"")"  "\n\n"
-
-			"Special boolean queries (e. g. check if element is contained in set) don’t return anything in case of success except their exit code EXIT_SUCCESS ("
-			<< std::to_string(EXIT_SUCCESS) << "). In case the query is unsuccessful (e. g. element not contained in set) the exit code is guaranteed "
-			<< "to be unequal to EXIT_SUCCESS and to EXIT_FAILURE (" << std::to_string(EXIT_FAILURE) << "). (Here it is "
-			<< std::to_string(EXIT_QUERY_NEGATIVE) << ".) This way, " PROGRAM_NAME " can be used in the shell.\n\n"
+			"Special boolean queries (e. g. check if element is contained in set) return exit code EXIT_SUCCESS (= " << std::to_string(EXIT_SUCCESS)
+			<< ") when the answer is 'yes' and otherwise (e. g. element not contained in set) an exit code that is guaranteed to be unequal "
+			<< "to EXIT_SUCCESS and to EXIT_FAILURE (= " << std::to_string(EXIT_FAILURE) << "). This way, " PROGRAM_NAME " can be used in the shell. "
+			<< "With option --quiet a verbose result message is omitted for boolean queries.\n\n"
 
 			"Examples:\n"
-			PROGRAM_NAME R"( -c ":fooBAR-:" --trim ":-\t" -C -d B.txt A.txt)"
-				"\n\t" "case-insensitive check if element \"foobar\" is contained in A minus B\n"
-			PROGRAM_NAME R"( A.txt - -i B.txt --input-element "\d+")"
+			PROGRAM_NAME R"( A.txt --subtract B.txt --output contains ":fooBAR-:" --trim ":-\t" --ignore-case)"
+				"\n\t" "case-insensitive check if element 'foobar' is contained in A minus B\n"
+			PROGRAM_NAME R"( A.txt - B.txt --combine intersection --input-element "\d+")"
 				"\n\t" "output intersection of console, A, and B, where elements are recognized as strings of digits with at least one character; "
 				"i. e. elements are non-negative integers\n"
-			PROGRAM_NAME " -s A.txt B.txt --input-separator [[:space:]-]"
-				"\n\t" "find all elements contained in A *or* B, not both, where a whitespace"  R"( (i. e. \v \t \n \r \f or space) )"
+			PROGRAM_NAME " A.txt B.txt --combine symmetric-difference --input-separator [[:space:]-]"
+				"\n\t" "find all elements contained in either A or B, not both, where a whitespace"  R"( (i. e. \v \t \n \r \f or space) )"
 				"or a minus is interpreted as a separator between elements\n";
 
 		return EXIT_SUCCESS;
 	}
 
+	for (boost::shared_ptr<po::option_description> const& deprecated_optdesc : deprecated_options.options())
+	{
+		if (opt_map.contains(deprecated_optdesc->long_name()))
+			std::cerr << "Warning: option '--" << deprecated_optdesc->long_name() << "' is deprecated and will be removed in later versions of "
+				<< PROGRAM_NAME << ".\n";
+	}
+	
 	if (opt_map.contains("version"))
 	{
 		std::cout << PROGRAM_NAME << " " << PROGRAM_VERSION << std::endl;
 		return EXIT_SUCCESS;
 	}
 
-
+	
 	// CHECK PLAUSIBILITY OF INPUT OPTIONS AND ARGUMENTS AND HANDLE THESE OPTIONS
 
+	verbose = opt_map.contains("verbose");
 	if (quiet & verbose)
 	{
-		std::cerr << "Warning: Only one of the options quiet and verbose is allowed. Both ignored.\n";
+		std::cerr << "Warning: the options '--quiet' and '--verbose' must not be combined. Both ignored.\n";
 		quiet = verbose = false;
 	}
 
-	if (opt_map.count("union") + opt_map.count("intersection") + opt_map.count("symmetric-difference") > 1)
-		return print_error("Only one of the set operations union, intersection, and symmetric difference must be used.");
-	SetConcat set_concat_type =
-		opt_map.contains("intersection") ? SetConcat::INTERSECTION :
-		opt_map.contains("symmetric-difference") ? SetConcat::SYM_DIFFERENCE :
-		SetConcat::UNION;
+	if (opt_map.count("combine") + opt_map.count("union") + opt_map.count("intersection") + opt_map.count("symmetric-difference") > 1)
+		return print_error("the options '--combine', '--union', '--intersection', and '--symmetric difference' must not be combined.");
+	SetConcat setconcat_type;
+	if (opt_map.contains("combine"))
+	{
+		std::map<std::string, SetConcat> concattype_by_parameter =
+			{{"union", SetConcat::UNION}, {"intersection", SetConcat::INTERSECTION}, {"symmetric-difference", SetConcat::SYM_DIFFERENCE}};
+		std::map<std::string, SetConcat>::const_iterator found_concattype_it = concattype_by_parameter.find(combination_type);
+		if (found_concattype_it == concattype_by_parameter.end())
+			return print_unsupported_parameter_error("combine", combination_type);
+		else
+			setconcat_type = found_concattype_it->second;
+	}
+	else
+	{
+		setconcat_type =
+			opt_map.contains("intersection") ? SetConcat::INTERSECTION :
+			opt_map.contains("symmetric-difference") ? SetConcat::SYM_DIFFERENCE :
+			SetConcat::UNION;
+	}
 
-	if (opt_map.count("count") + opt_map.count("is-empty") + opt_map.count("subset")
+	if (opt_map.count("difference") + opt_map.count("subtract") > 1)
+		return print_error("the options '--difference' and '--subtract' must not be combined.");
+
+	if (opt_map.count("output") + opt_map.count("count") + opt_map.count("is-empty") + opt_map.count("subset")
 		+ opt_map.count("superset") + opt_map.count("contains") + opt_map.count("equal") > 1)
-		return print_error("Only one of the options count, is-empty, subset, superset, contains, and equal is allowed.");
-	SetQuery set_query_type =
-		opt_map.contains("count") ? SetQuery::CARDINALITY :
-		opt_map.contains("is-empty") ? SetQuery::ISEMPTY :
-		opt_map.contains("subset") ? SetQuery::SUBSET :
-		opt_map.contains("superset") ? SetQuery::SUPERSET :
-		opt_map.contains("contains") ? SetQuery::CONTAINS_ELEMENT :
-		opt_map.contains("equal") ? SetQuery::SET_EQUALITY :
-		SetQuery::RETURN_SET;
+		return print_error("the options '--output', '--count', '--is-empty', '--subset', '--superset', '--contains', and '--equal' must not be combined.");
+	SetQuery output_type;
+	bool modern_outputoption_used = opt_map.contains("output");
+	if (modern_outputoption_used)
+	{
+		int number_parameters = output_parameters.size();
+		if (number_parameters < 1)
+			return print_error("option '--output' needs at least one parameter.");
+		
+		std::map<std::string, SetQuery> outputtype_by_parameter =
+			{{"set", SetQuery::RETURN_SET}, {"count", SetQuery::CARDINALITY}, {"is-empty", SetQuery::ISEMPTY}, {"contains", SetQuery::CONTAINS_ELEMENT},
+			{"equals", SetQuery::SET_EQUALITY}, {"has-subset", SetQuery::SUBSET}, {"has-superset", SetQuery::SUPERSET}};
+		std::string const& output_type_str = output_parameters.front();
+		std::map<std::string, SetQuery>::const_iterator found_outputtype_it = outputtype_by_parameter.find(output_type_str);
+		if (found_outputtype_it == outputtype_by_parameter.end())
+			return print_unsupported_parameter_error("output", output_type_str);
+		else
+			output_type = found_outputtype_it->second;
+		
+		int needed_number_parameters = std::set({SetQuery::RETURN_SET, SetQuery::CARDINALITY, SetQuery::ISEMPTY}).contains(output_type) ? 1 : 2;
+		if (number_parameters != needed_number_parameters)
+		{
+			return print_error(number_parameters < needed_number_parameters ?
+				"option '--output' with parameter '" + output_type_str + "' needs an additional parameter." :
+				"option '--output' with parameter '" + output_type_str + "' does not need additional parameters. Found unneeded value '" + output_parameters[2] + "'.");
+		}
+		if (number_parameters == 2)
+			additional_output_parameter = output_parameters[1];
+	}
+	else
+	{
+		output_type =
+			opt_map.contains("count") ? SetQuery::CARDINALITY :
+			opt_map.contains("is-empty") ? SetQuery::ISEMPTY :
+			opt_map.contains("subset") ? SetQuery::SUBSET :
+			opt_map.contains("superset") ? SetQuery::SUPERSET :
+			opt_map.contains("contains") ? SetQuery::CONTAINS_ELEMENT :
+			opt_map.contains("equal") ? SetQuery::SET_EQUALITY :
+			SetQuery::RETURN_SET;
+	}
 
 	// parse escape sequences of trim characters and output separator to "real" characters (e. g. ".\'\\" gets ".'\")
 	try
@@ -442,7 +521,7 @@ int execute_setop(int argc, char* argv[])
 		{element_format, input_opts.input_element_regex},
 		{separator_format, input_opts.input_separator_regex}})
 	{
-		boost::regex::flag_type regex_flags = boost::regex_constants::ECMAScript | boost::regex_constants::optimize /*| (ignore_case ? boost::regex_constants::icase : 0)*/;
+		boost::regex::flag_type regex_flags = boost::regex_constants::ECMAScript | boost::regex_constants::optimize;
 		if (!string_to_parse.empty())
 		{
 			try
@@ -471,7 +550,7 @@ int execute_setop(int argc, char* argv[])
 
 	// PROCESS CALCULATIONS IN THREE STEPS
 
-	// STEP 1/3: execute all commutative set operations (union, intersection, symmetric difference)
+	// STEP 1/3: execute all commutative set combinations (union, intersection, symmetric difference)
 
 	set_t output_set(input_opts.element_comp);
 	for (auto curr_fn_it = input_filenames.cbegin(); curr_fn_it != input_filenames.cend(); ++curr_fn_it)
@@ -484,7 +563,7 @@ int execute_setop(int argc, char* argv[])
 		}
 		else
 		{
-			switch (set_concat_type)
+			switch (setconcat_type)
 			{
 			case SetConcat::UNION:
 				output_set.merge(std::move(curr_set));
@@ -526,23 +605,32 @@ int execute_setop(int argc, char* argv[])
 	// STEP 3/3: calculate output depending on set query
 
 	// print success and failure messages from query and return exit code of program
-	auto answer_query = [quiet, verbose](bool success, std::string const& success_msg, std::string const& unsuccess_msg) -> int
+	auto answer_query = [quiet, verbose, modern_outputoption_used](bool success, std::string const& success_msg, std::string const& unsuccess_msg) -> int
 	{
-		if (success)
+		if (modern_outputoption_used)
 		{
-			if (verbose)
-				std::cout << success_msg;
-			return EXIT_SUCCESS;
+			if (!quiet)
+				std::cout << (success ? success_msg : unsuccess_msg);
+			return success ? EXIT_SUCCESS : EXIT_QUERY_NEGATIVE;
 		}
 		else
 		{
-			if (!quiet)
-				std::cout << unsuccess_msg;
-			return EXIT_QUERY_NEGATIVE;
+			if (success)
+			{
+				if (verbose)
+					std::cout << success_msg;
+				return EXIT_SUCCESS;
+			}
+			else
+			{
+				if (!quiet)
+					std::cout << unsuccess_msg;
+				return EXIT_QUERY_NEGATIVE;
+			}
 		}
 	};
 
-	switch (set_query_type)
+	switch (output_type)
 	{
 	case SetQuery::RETURN_SET:
 		for (element_t const& el : output_set)
@@ -557,26 +645,29 @@ int execute_setop(int argc, char* argv[])
 			"Resulting set is empty.\n",
 			"Resulting set is not empty.\n");
 	case SetQuery::CONTAINS_ELEMENT:
+	{
+		element_t& element_to_check = additional_output_parameter;
 		boost::trim_if(element_to_check, boost::is_any_of(input_opts.trim_characters));
 		return answer_query(
 			output_set.contains(element_to_check),
 			"\"" + element_to_check + "\" is contained in set.\n",
 			"Input does not contain element \"" + element_to_check + "\".\n");
+	}
 	case SetQuery::SET_EQUALITY:
 		return answer_query(
-			file_to_set(equal_filename) == output_set,
-			"Resulting set is equal to input \"" + equal_filename + "\".\n",
-			"Resulting set is not equal to input \"" + equal_filename + "\".\n");
+			file_to_set(additional_output_parameter) == output_set,
+			"Resulting set is equal to input \"" + additional_output_parameter + "\".\n",
+			"Resulting set is not equal to input \"" + additional_output_parameter + "\".\n");
 	case SetQuery::SUBSET:
 		return answer_query(
-			std::ranges::includes(output_set, file_to_set(subset_filename)),
-			"\"" + subset_filename + "\" is a subset.\n",
-			"\"" + subset_filename + "\" is not a subset.\n");
+			std::ranges::includes(output_set, file_to_set(additional_output_parameter)),
+			"\"" + additional_output_parameter + "\" is a subset.\n",
+			"\"" + additional_output_parameter + "\" is not a subset.\n");
 	case SetQuery::SUPERSET:
 		return answer_query(
-			std::ranges::includes(file_to_set(superset_filename), output_set),
-			"\"" + superset_filename + "\" is a superset.\n",
-			"\"" + superset_filename + "\" is not a superset.\n");
+			std::ranges::includes(file_to_set(additional_output_parameter), output_set),
+			"\"" + additional_output_parameter + "\" is a superset.\n",
+			"\"" + additional_output_parameter + "\" is not a superset.\n");
 	default:
 		// never happens because all cases are handled above
 		return EXIT_FAILURE;
@@ -603,7 +694,7 @@ int main(int argc, char* argv[])
 	// no more memory for more elements, or one element is too large because of faulty regular expression
 	catch (std::bad_alloc const&)
 	{
-		return print_error("Not enough memory available. Input data could be too large, or input element or separator regex could be erroneous.");
+		return print_error("not enough memory available. Input data could be too large, or input element or separator regex could be erroneous.");
 	}
 #ifndef _DEBUG
 	catch (std::exception const& exc)
@@ -612,7 +703,7 @@ int main(int argc, char* argv[])
 	}
 	catch (...)
 	{
-		return print_error("Unknown error occurred.");
+		return print_error("unknown error occurred.");
 	}
 #endif
 	

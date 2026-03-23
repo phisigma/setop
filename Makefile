@@ -9,6 +9,7 @@ SOURCES = src/main.cpp
 # where to put executable and manpage on 'make install'
 BIN ?= $(DESTDIR)/usr/bin
 HELP ?= $(DESTDIR)/usr/share/man/man1
+BASHCOMPLETION ?= $(DESTDIR)/usr/share/bash-completion/completions
 
 
 all: $(PROGNAME) man
@@ -21,10 +22,11 @@ clean:
 	-rm -f $(PROGNAME)
 	-rm -f $(PROGNAME).1
 
-install: $(PROGNAME) man
-	install -d $(BIN) $(HELP)
+install: $(PROGNAME) man src/setop.bash
+	install -d $(BIN) $(HELP) $(BASHCOMPLETION)
 	install $(PROGNAME) $(BIN)
 	install $(PROGNAME).1 $(HELP)
+	install src/setop.bash $(BASHCOMPLETION)
 
 man: $(PROGNAME)
 	help2man -n "make set of strings from input" -N -L en_US.UTF-8 ./$(PROGNAME) | gzip > $(PROGNAME).1
