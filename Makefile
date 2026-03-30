@@ -14,7 +14,7 @@ HELP ?= $(DESTDIR)/usr/share/man/man1
 all: $(PROGNAME) man
 
 $(PROGNAME): $(SOURCES)
-	$(CXX) $(CXXFLAGS) $(SOURCES) $(LDFLAGS) $(LIBS) -o $(PROGNAME)
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(SOURCES) $(LDFLAGS) $(LIBS) -o $(PROGNAME)
 
 clean:
 	@echo "Clean."
