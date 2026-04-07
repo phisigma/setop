@@ -141,7 +141,7 @@ set_t file_to_set(std::string const& filename)
 	std::istream& inputstream = (filename == "-" ? std::cin : inputfile);
 
 	// lambda for running adjust_element and inserting it right after (according to options)
-	auto adjust_and_insert_element = [&result](element_t el_str, bool check_element_regex = false)
+	auto adjust_and_insert_element = [&result](element_t el_str, bool check_element_regex)
 	{
 		if (!check_element_regex || input_opts.input_element_regex.empty() ||
 			boost::regex_match(el_str, input_opts.input_element_regex))
@@ -152,49 +152,7 @@ set_t file_to_set(std::string const& filename)
 		}
 	};
 
-	// FIRST METHOD: parse input according to list of delimiter characters
-	// this would be faster, but only about 30 %, and it would assume a check if regex input_separator is convertible to list of possible delimiters
-	/*
-	if (!input_opts.input_separators.empty())
-	{
-		element_t curr_element;
-
-		if (input_opts.input_separators == "\n")
-		{
-			while (std::getline(inputstream, curr_element))
-			{
-				adjust_and_insert_element(std::move(curr_element));
-				curr_element = "";
-			}
-		}
-		else
-		{
-			char c;
-			bool word_active = true;
-			while (inputstream.get(c))
-			{
-				if (input_opts.input_separators.find(c) != std::string::npos)
-				{
-					if (word_active)
-					{
-						adjust_and_insert_element(std::move(curr_element));
-						curr_element = "";
-						word_active = false;
-					}
-				}
-				else
-				{
-					word_active = true;
-					curr_element.push_back(c);
-				}
-			}
-			if (word_active)
-				adjust_and_insert_element(std::move(curr_element));
-		}
-	}
-	*/
-
-	// SECOND METHOD: parse input according to regular expression describing an element or a separator
+	// general idea: parse input according to regular expression describing an element or a separator
 
 	bool use_separator_regex = input_opts.input_element_regex.empty();
 	boost::regex const& regex = (use_separator_regex ? input_opts.input_separator_regex : input_opts.input_element_regex);
@@ -230,7 +188,7 @@ set_t file_to_set(std::string const& filename)
 			}
 			else
 			{
-				adjust_and_insert_element(curr_match->str());
+				adjust_and_insert_element(curr_match->str(), false);
 			}
 			++curr_match;
 		}
