@@ -18,6 +18,7 @@ You can find a copy of the GNU General Public License at <http://www.gnu.org/lic
 #include <set>
 #include <map>
 #include <vector>
+#include <stack>
 #include <fstream>
 #include <functional>
 #include <memory>
@@ -46,7 +47,7 @@ static_assert((EXIT_QUERY_NEGATIVE != EXIT_SUCCESS) && (EXIT_QUERY_NEGATIVE != E
 	"Macro EXIT_QUERY_NEGATIVE must not be equal to EXIT_SUCCESS or to EXIT_FAILURE.");
 
 /** \brief all possible commutative set operations */
-enum class SetConcat : unsigned char { UNION, INTERSECTION, SYM_DIFFERENCE };
+enum class SetConcat : unsigned char { UNION, INTERSECTION, SYM_DIFFERENCE, FORMULA };
 /** \brief types of different return possibilities for program */
 enum class SetQuery : unsigned char { RETURN_SET, CARDINALITY, ISEMPTY, SUBSET, SUPERSET, CONTAINS_ELEMENT, SET_EQUALITY };
 
@@ -73,6 +74,8 @@ public:
 	std::string output_separator; ///< string elements shall be separated with in output
 	std::string trim_characters; ///< list of characters that shall be ignored in element at begin and end
 } input_opts;
+
+std::vector<std::string> input_filenames;
 
 
 /**
@@ -242,6 +245,187 @@ inline int print_unsupported_parameter_error(std::string const& option, std::str
 	return print_error("option '--" + option + "' does not support a parameter '" + parameter + "'.");
 }
 
+class invalid_formula_exception : public std::invalid_argument
+{
+public:
+	invalid_formula_exception(std::string const& error_message)
+		: invalid_argument(error_message) {}
+};
+
+enum class SetCombineOperation
+{
+	Intersection,
+	SymmetricDiff,
+	Union,
+	SetDifference
+};
+
+/// Combine `output_set` with `next_input` via `operation` and store result in `output_set`.
+void combine_with_next_set(set_t& output_set, SetCombineOperation operation, set_t&& next_input)
+{
+	switch (operation)
+	{
+		case SetCombineOperation::Intersection:
+		{
+			set_t intersect(input_opts.element_comp);
+			for (element_t const& el : output_set)
+				if (next_input.contains(el))
+					intersect.insert(el);
+
+			output_set = std::move(intersect);
+			break;
+		}
+		case SetCombineOperation::SymmetricDiff:
+			for (element_t const& el : next_input)
+			{
+				set_t::const_iterator it = output_set.find(el);
+				if (it != output_set.end())
+					output_set.erase(it);
+				else
+					output_set.insert(el);
+			}
+			break;
+		case SetCombineOperation::Union:
+			output_set.merge(std::move(next_input));
+			break;
+		case SetCombineOperation::SetDifference:
+			for (element_t const& el : next_input)
+				output_set.erase(el);
+			break;
+		default: // can never happen
+			assert(false && "Internal error, a set comination type is not covered.");
+	}
+}
+
+/**
+\brief Move `formula_it` forward so it shows to non-whitespace (= tab, space, new line).
+\return `true` if next character is valid, `false` if string is at end (= null character)
+*/
+bool goto_next_nonwhitespace(std::string::const_iterator& formula_it)
+{
+	while (*formula_it && std::isspace(*formula_it))
+		++formula_it;
+	return *formula_it;
+}
+
+set_t evaluate_formula(std::string::const_iterator& formula_it, bool within_brackets = false); // needed forward declaration
+
+/**
+\brief Calculate next complete term represented by input stream index or by term in brackets.
+\details E. g. "3 & 4" results in set of input stream 3 and `formula_it` is moved to character after '&',
+	whereas "(3 & 4)" would include calculation of intersection and set `formula_it` to end of string.
+	A term is always expected, i. e. formula must start with number or opening bracket and an empty string triggers an exception.
+\param formula_it iterator of formula where evaluation shall start, is moved forward to next unread character
+\return set of evaluated term
+*/
+set_t evaluate_next_term(std::string::const_iterator& formula_it)
+{
+	set_t result;
+	if (!goto_next_nonwhitespace(formula_it))
+		throw invalid_formula_exception("a term is missing");
+	if (*formula_it == '(')
+	{
+		++formula_it;
+		result = evaluate_formula(formula_it, true);
+	}
+	else
+	{
+		std::string::size_type number_read_chars;
+		unsigned long inputstream_index;
+		try
+		{
+			inputstream_index = std::stoul(&*formula_it, &number_read_chars); // throws std::invalid_argument or std::out_of_range
+		}
+		catch (std::logic_error const&)
+		{
+			throw invalid_formula_exception("a positive integer or opening bracket is expected");
+		}
+		if (inputstream_index < 1 || inputstream_index > input_filenames.size())
+			throw invalid_formula_exception("input stream indices should be in the range from 1 to " + std::to_string(input_filenames.size()));
+		result = file_to_set(input_filenames[inputstream_index - 1]);
+		formula_it += number_read_chars;
+	}
+	return result;
+}
+
+/**
+\brief Calculate resulting set from formula.
+\param formula_it iterator of formula where evaluation shall start, is moved forward to next unread character
+\param within_brackets for recursively evaluating "subformulas" within brackets; when true, stops directly after closing bracket and returns
+\return set of evaluated formula
+*/
+set_t evaluate_formula(std::string::const_iterator& formula_it, bool within_brackets)
+{
+	// STEP A: a formula contains at least one term, so read it
+	set_t result = evaluate_next_term(formula_it);
+
+	class OperationSetPair
+	{
+	public:
+		SetCombineOperation operation;
+		set_t set;
+	};
+	std::stack<OperationSetPair> op_set_pairs;
+	auto shorten_stack = [&]() // remove top element of stack while letting total value of all operations unchanged
+	{
+		OperationSetPair top_term = std::move(op_set_pairs.top());
+		op_set_pairs.pop();
+		set_t& base_term = (op_set_pairs.empty() ? result : op_set_pairs.top().set);
+		combine_with_next_set(base_term, top_term.operation, std::move(top_term.set));
+	};
+
+	while (goto_next_nonwhitespace(formula_it))
+	{
+		// either STEP B: return from recursive call when end of subformula within brackets is reached
+		if (*formula_it == ')')
+		{
+			if (!within_brackets)
+				throw invalid_formula_exception("found closing bracket without opening bracket");
+			++formula_it;
+			within_brackets = false;
+			break;
+		}
+
+		// or STEP C
+		// STEP C-1: parse operation
+		std::map<char, SetCombineOperation> const combineoperation_by_operator = {
+			{'&', SetCombineOperation::Intersection},
+			{'^', SetCombineOperation::SymmetricDiff},
+			{'|', SetCombineOperation::Union},
+			{'-', SetCombineOperation::SetDifference}
+		};
+		std::map<char, SetCombineOperation>::const_iterator next_operation = combineoperation_by_operator.find(*formula_it);
+		if (next_operation == combineoperation_by_operator.end())
+			throw invalid_formula_exception("an operator like &, |, ^, or - is missing");
+		++formula_it;
+
+		// STEP C-2: parse value
+		set_t next_set = evaluate_next_term(formula_it);
+
+		// STEP C-3: handle new value-operation-pair
+		if (next_operation->second == SetCombineOperation::Intersection) // has highest priority, calculate immediately for better performance
+		{
+			set_t& base_term = (op_set_pairs.empty() ? result : op_set_pairs.top().set);
+			combine_with_next_set(base_term, next_operation->second, std::move(next_set));
+		}
+		else // try to merge elements from stack when their operation is as least as important as current operation
+		{
+			while (!op_set_pairs.empty() && next_operation->second >= op_set_pairs.top().operation)
+				shorten_stack();
+			op_set_pairs.push(OperationSetPair{.operation = next_operation->second, .set = std::move(next_set)});
+		}
+	}
+
+	if (within_brackets)
+		throw invalid_formula_exception("a closing bracket is missing");
+
+	// STEP D: handle remaining stack of operations and sets
+	while (!op_set_pairs.empty())
+		shorten_stack();
+
+	return result;
+}
+
 /**
 \brief Main function of program: take command line options and arguments and execute output.
 \throws std::runtime_error
@@ -250,8 +434,8 @@ int execute_setop(int argc, char* argv[])
 {
 	// needed variables, mainly options and arguments from command line
 	bool quiet, verbose, ignore_case;
-	std::string combination_type, additional_output_parameter, separator_format, element_format;
-	std::vector<std::string> input_filenames, setdifference_filenames, output_parameters;
+	std::string formula, additional_output_parameter, separator_format, element_format;
+	std::vector<std::string> combine_parameters, setdifference_filenames, output_parameters;
 
 
 	// PARSE COMMAND LINE
@@ -270,8 +454,8 @@ int execute_setop(int argc, char* argv[])
 		("output-separator,o", po::value(&input_opts.output_separator)->default_value("\\n"), "string for separating output elements; escape sequences are allowed")
 		("trim,t", po::value(&input_opts.trim_characters), "trim all given characters at beginning and end of elements (escape sequences allowed)")
 
-		("combine", po::value(&combination_type)/*->default_value("union")*/, "define combination operation applied to given input streams; "
-			"possible parameters are 'union' (default), 'intersection', and 'symmetric-difference'")
+		("combine", po::value(&combine_parameters)->multitoken()/*->default_value("union")*/, "define combination operation applied to given input streams; "
+			"possible parameters are 'union' (default), 'intersection', 'symmetric-difference', and 'formula <value>'")
 		("subtract", po::value(&setdifference_filenames)->multitoken(), "subtract all elements of all given streams from output set")
 
 		("output", po::value(&output_parameters)->multitoken()/*->default_value("set")*/, "whether to output determined set or a certain information of this set instead; "
@@ -327,7 +511,7 @@ int execute_setop(int argc, char* argv[])
 
 			"Usage:\n"
 			PROGRAM_NAME " [input-stream]* [-C] [--include-empty] [--input-separator <value>] [--input-element <value>] [--trim <value>] "
-			"[--combine union|intersection|symmetric-difference] [--subtract [input-stream]*] "
+			"[--combine (union|intersection|symmetric-difference|formula <value>)] [--subtract [input-stream]*] "
 			"[--output (set|count|is-empty|contains <value>|equals <input-stream>|has-subset <input-stream>|has-superset <input-stream>)] "
 			"[--output-separator <value>] [--quiet]\n\n"
 
@@ -340,6 +524,12 @@ int execute_setop(int argc, char* argv[])
 			"After that, all inputs from option --subtract are parsed and removed from result of first step. "
 			"Finally, the desired output given from option --output is printed to screen: "
 			"the set itself, or its number of elements, or a comparison to another set etc.\n\n"
+			
+			"The combination type 'formula' needs an additional string mainly consisting of positive integers and combining operators. "
+			"The integers 1, 2, etc. represent the first, second, etc. input stream; possible operators are '&' for intersection, "
+			"'^' for symmetric difference, '|' for union, and '-' for set difference. At the moment, they are prioritized in that order (i. e. &, ^, |, -), "
+			"but this may change in the future. Use brackets for being explicit about the order of evaluation. Example: "
+			"--combine formula '(1 | 2) & 3' unites first and second input stream and intersects the result with third input stream.\n\n"
 
 			"By default each line of an input stream is considered to be an element, you can change this by defining regular expressions "
 			"within the options --input-separator or --input-element. When using both, the input stream is first split according to the separator "
@@ -398,13 +588,29 @@ int execute_setop(int argc, char* argv[])
 	SetConcat setconcat_type;
 	if (opt_map.contains("combine"))
 	{
+		int number_parameters = combine_parameters.size();
+		if (number_parameters < 1)
+			return print_error("option '--combine' needs at least one parameter.");
+		
 		std::map<std::string, SetConcat> concattype_by_parameter =
-			{{"union", SetConcat::UNION}, {"intersection", SetConcat::INTERSECTION}, {"symmetric-difference", SetConcat::SYM_DIFFERENCE}};
-		std::map<std::string, SetConcat>::const_iterator found_concattype_it = concattype_by_parameter.find(combination_type);
+			{{"union", SetConcat::UNION}, {"intersection", SetConcat::INTERSECTION},
+			{"symmetric-difference", SetConcat::SYM_DIFFERENCE}, {"formula", SetConcat::FORMULA}};
+		std::string const& combine_type_str = combine_parameters.front();
+		std::map<std::string, SetConcat>::const_iterator found_concattype_it = concattype_by_parameter.find(combine_type_str);
 		if (found_concattype_it == concattype_by_parameter.end())
-			return print_unsupported_parameter_error("combine", combination_type);
+			return print_unsupported_parameter_error("combine", combine_type_str);
 		else
 			setconcat_type = found_concattype_it->second;
+		
+		int needed_number_parameters = setconcat_type == SetConcat::FORMULA ? 2 : 1;
+		if (number_parameters != needed_number_parameters)
+		{
+			return print_error(number_parameters < needed_number_parameters ?
+				"option '--combine' with parameter '" + combine_type_str + "' needs an additional parameter." :
+				"option '--combine' with parameter '" + combine_type_str + "' does not need additional parameters. Found unneeded value '" + combine_parameters[2] + "'.");
+		}
+		if (number_parameters == 2)
+			formula = combine_parameters[1];
 	}
 	else
 	{
@@ -508,43 +714,36 @@ int execute_setop(int argc, char* argv[])
 
 	// PROCESS CALCULATIONS IN THREE STEPS
 
-	// STEP 1/3: execute all commutative set combinations (union, intersection, symmetric difference)
+	// STEP 1/3: execute all commutative set combinations (union, intersection, symmetric difference) or formula
 
 	set_t output_set(input_opts.element_comp);
-	for (auto curr_fn_it = input_filenames.cbegin(); curr_fn_it != input_filenames.cend(); ++curr_fn_it)
+	if (setconcat_type == SetConcat::FORMULA)
 	{
-		set_t curr_set = file_to_set(*curr_fn_it);
-
-		if (curr_fn_it == input_filenames.cbegin()) // if it is the first input stream
+		std::string::const_iterator formula_it = formula.cbegin();
+		try
 		{
-			output_set = std::move(curr_set);
+			output_set = evaluate_formula(formula_it);
 		}
-		else
+		catch (invalid_formula_exception const& formula_exception)
 		{
-			switch (setconcat_type)
+			return print_error(std::string("invalid formula, ") + formula_exception.what() + "\n" + formula + "\n"
+				+ std::string(formula_it - formula.cbegin(), ' ') + "^");
+		}
+	}
+	else
+	{
+		for (auto curr_fn_it = input_filenames.cbegin(); curr_fn_it != input_filenames.cend(); ++curr_fn_it)
+		{
+			if (curr_fn_it == input_filenames.cbegin()) // if it is the first input stream
 			{
-			case SetConcat::UNION:
-				output_set.merge(std::move(curr_set));
-				break;
-			case SetConcat::INTERSECTION:
-			{
-				set_t intersect(input_opts.element_comp);
-				for (element_t const& el : output_set)
-					if (curr_set.contains(el))
-						intersect.insert(el);
-
-				output_set = std::move(intersect);
-				break;
+				output_set = file_to_set(*curr_fn_it);
 			}
-			case SetConcat::SYM_DIFFERENCE:
-				for (element_t const& el : curr_set)
-				{
-					set_t::const_iterator it = output_set.find(el);
-					if (it != output_set.end())
-						output_set.erase(it);
-					else
-						output_set.insert(el);
-				}
+			else
+			{
+				SetCombineOperation operation = setconcat_type == SetConcat::UNION ? SetCombineOperation::Union :
+					setconcat_type == SetConcat::INTERSECTION ? SetCombineOperation::Intersection :
+					SetCombineOperation::SymmetricDiff;
+				combine_with_next_set(output_set, operation, file_to_set(*curr_fn_it));
 			}
 		}
 	}
@@ -554,9 +753,7 @@ int execute_setop(int argc, char* argv[])
 
 	for (std::string const& filename : setdifference_filenames)
 	{
-		set_t curr_diff = file_to_set(filename);
-		for (element_t const& el : curr_diff)
-			output_set.erase(el);
+		combine_with_next_set(output_set, SetCombineOperation::SetDifference, file_to_set(filename));
 	}
 
 

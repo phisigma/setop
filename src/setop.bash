@@ -9,11 +9,16 @@ _setop()
 	previous="${COMP_WORDS[COMP_CWORD-1]}"
 	beforeprevious="${COMP_WORDS[COMP_CWORD-2]}"
 	options="--help --version --quiet --combine --subtract --output --ignore-case --include-empty --input-separator --input-element --trim --output-separator"
-	combinationtypes="union intersection symmetric-difference"
+	combinationtypes="union intersection symmetric-difference formula"
 	outputtypes="set count is-empty contains equals has-subset has-superset"
 
 	if [[ ${current} == -* ]] ; then
 		COMPREPLY=( $(compgen -W "${options}" -- ${current}) )
+		return 0
+	fi
+	
+	if [[ "${beforeprevious}" == --combine ]] && [[ "${previous}" == formula ]] ; then
+		COMPREPLY=()
 		return 0
 	fi
 	
