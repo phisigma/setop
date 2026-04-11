@@ -19,6 +19,7 @@ You can find a copy of the GNU General Public License at <http://www.gnu.org/lic
 #include <map>
 #include <vector>
 #include <stack>
+#include <regex>
 #include <fstream>
 #include <functional>
 #include <memory>
@@ -125,6 +126,9 @@ std::string unescape_sequence(std::string const& escape_seq)
 }
 
 
+std::map<std::string, set_t> inputstream_cache; // in case an input is needed more than once, do not parse input file again but cache it
+std::map<std::string, int> inputstream_to_usagecount; // should in general be 1 for all entries
+
 /**
 \brief Returns all elements from file as a set.
 \param filename name of input file with elements to parse
@@ -132,7 +136,22 @@ std::string unescape_sequence(std::string const& escape_seq)
 set_t file_to_set(std::string const& filename)
 {
 	set_t result(input_opts.element_comp);
-
+	
+	// handle caching of input streams in case they are needed multiple times
+	std::map<std::string, int>::iterator usage_count = inputstream_to_usagecount.find(filename);
+	--usage_count->second;
+	std::map<std::string, set_t>::iterator cached_input_it = inputstream_cache.find(filename);
+	if (cached_input_it != inputstream_cache.end())
+	{
+		if (usage_count->second == 0)
+		{
+			result = std::move(cached_input_it->second); // not needed anymore
+		}
+		else
+			result = cached_input_it->second; // copy
+		return result;
+	}
+	
 	// set input stream (can be std::cin)
 	std::ifstream inputfile;
 	if (filename != "-")
@@ -220,7 +239,19 @@ set_t file_to_set(std::string const& filename)
 	if (use_separator_regex && used_buffer > 0)
 		adjust_and_insert_element(element_t(buffer.get(), used_buffer), true);
 
+	if (usage_count->second > 0)
+		inputstream_cache[filename] = result; // cache result because it is needed later
+	
 	return result;
+}
+
+/**
+\brief Prints complete warning message to console `std::cerr` including hint, that this is a warning.
+\param warning_message warning message without new line at end
+*/
+inline void print_warning(std::string const& warning_message)
+{
+	std::cerr << "Warning: " << warning_message << "\n";
 }
 
 /**
@@ -434,7 +465,8 @@ int execute_setop(int argc, char* argv[])
 {
 	// needed variables, mainly options and arguments from command line
 	bool quiet, verbose, ignore_case;
-	std::string formula, additional_output_parameter, separator_format, element_format;
+	std::string formula, inputstream_for_set_comparison, separator_format, element_format;
+	element_t element_for_contains_check;
 	std::vector<std::string> combine_parameters, setdifference_filenames, output_parameters;
 
 
@@ -481,10 +513,10 @@ int execute_setop(int argc, char* argv[])
 		("verbose", "")
 		("count,#", "")
 		("is-empty", "")
-		("contains,c", po::value(&additional_output_parameter), "")
-		("equal,e", po::value(&additional_output_parameter), "")
-		("subset,b", po::value(&additional_output_parameter), "")
-		("superset,p", po::value(&additional_output_parameter), "");
+		("contains,c", po::value(&element_for_contains_check), "")
+		("equal,e", po::value(&inputstream_for_set_comparison), "")
+		("subset,b", po::value(&inputstream_for_set_comparison), "")
+		("superset,p", po::value(&inputstream_for_set_comparison), "");
 	po::options_description all_options("All options");
 	all_options.add(invisible_options).add(deprecated_options).add(visible_options);
 
@@ -517,7 +549,8 @@ int execute_setop(int argc, char* argv[])
 
 			<< visible_options
 
-			<< "No input filename or '-' is equal to reading from standard input.\n\n"
+			<< "No input filename or '-' is equal to reading from standard input. When an input stream occurs multiple times in the calling command, "
+			"it is read only once and cached.\n\n"
 
 			<< "The sequence of events of " PROGRAM_NAME " is as follows:\n"
 			"At first, all input files are parsed and combined according to the --combine option. "
@@ -563,8 +596,8 @@ int execute_setop(int argc, char* argv[])
 	for (boost::shared_ptr<po::option_description> const& deprecated_optdesc : deprecated_options.options())
 	{
 		if (opt_map.contains(deprecated_optdesc->long_name()))
-			std::cerr << "Warning: option '--" << deprecated_optdesc->long_name() << "' is deprecated and will be removed in later versions of "
-				<< PROGRAM_NAME << ".\n";
+			print_warning("option '--" + deprecated_optdesc->long_name() + "' is deprecated and will be removed in later versions of "
+				PROGRAM_NAME + ".");
 	}
 	
 	if (opt_map.contains("version"))
@@ -579,10 +612,30 @@ int execute_setop(int argc, char* argv[])
 	verbose = opt_map.contains("verbose");
 	if (quiet & verbose)
 	{
-		std::cerr << "Warning: the options '--quiet' and '--verbose' must not be combined. Both ignored.\n";
+		print_warning("the options '--quiet' and '--verbose' must not be combined. Both ignored.");
 		quiet = verbose = false;
 	}
-
+	
+	// report and delete redundant entries for set differences
+	std::map<std::string, int> setdifference_streams_usagecount;
+	for (std::string const& inputstream : setdifference_filenames)
+		++setdifference_streams_usagecount[inputstream];
+	for (auto const& [setdifference_stream, usage_count] : setdifference_streams_usagecount)
+	{
+		if (usage_count > 1)
+		{
+			print_warning("option '--" + std::string(opt_map.contains("subtract") ? "subtract" : "difference") + "' contains input stream '"
+				+ setdifference_stream + "' multiple times. Redundant entries ignored.");
+			for (int curr_redundant_entry_index = 1; curr_redundant_entry_index < usage_count; ++curr_redundant_entry_index)
+			{
+				std::vector<std::string>::const_iterator found_redundant_entry =
+					std::ranges::find_last(setdifference_filenames, setdifference_stream).begin(); // remove from back so order stays preserved
+				assert(found_redundant_entry != setdifference_filenames.cend() && "Internal error, handling of multiple set difference streams is faulty.");
+				setdifference_filenames.erase(found_redundant_entry);
+			}
+		}
+	}
+	
 	if (opt_map.count("combine") + opt_map.count("union") + opt_map.count("intersection") + opt_map.count("symmetric-difference") > 1)
 		return print_error("the options '--combine', '--union', '--intersection', and '--symmetric difference' must not be combined.");
 	SetConcat setconcat_type;
@@ -610,7 +663,34 @@ int execute_setop(int argc, char* argv[])
 				"option '--combine' with parameter '" + combine_type_str + "' does not need additional parameters. Found unneeded value '" + combine_parameters[2] + "'.");
 		}
 		if (number_parameters == 2)
+		{
 			formula = combine_parameters[1];
+			
+			// analyze formula for missing input stream numbers and setup input stream usage counts
+			std::regex integer_regex("[[:digit:]]+");
+			std::map<unsigned long, int> inputstream_number_to_usagecount;
+			std::sregex_iterator curr_found_integer(formula.begin(), formula.end(), integer_regex);
+			for (; curr_found_integer != std::sregex_iterator() /*== end*/; ++curr_found_integer)
+			{
+				++inputstream_number_to_usagecount[std::stoul(curr_found_integer->str())];
+			}
+			
+			if (inputstream_number_to_usagecount.begin()->first > 0 && inputstream_number_to_usagecount.rbegin()->first <= input_filenames.size())
+			// out-of-range error is handled later (to show exact position in formula), just exclude this case here to avoid error on array access
+			{
+				for (std::size_t expected_inputstream_index = 0; expected_inputstream_index < input_filenames.size(); ++expected_inputstream_index)
+					if (!inputstream_number_to_usagecount.contains(expected_inputstream_index + 1))
+						print_warning("the number " + std::to_string(expected_inputstream_index + 1) + " is not used in the formula "
+							"and thus the input stream '" + input_filenames[expected_inputstream_index] + "' is ignored.");
+			
+				for (auto const& [inputstream_number, usagecount] : inputstream_number_to_usagecount)
+					inputstream_to_usagecount[input_filenames[inputstream_number - 1]] += usagecount;
+			}
+			for (std::string const& setdifference_filename : setdifference_filenames)
+				++inputstream_to_usagecount[setdifference_filename];
+			if (!inputstream_for_set_comparison.empty())
+				++inputstream_to_usagecount[inputstream_for_set_comparison];
+		}
 	}
 	else
 	{
@@ -652,7 +732,7 @@ int execute_setop(int argc, char* argv[])
 				"option '--output' with parameter '" + output_type_str + "' does not need additional parameters. Found unneeded value '" + output_parameters[2] + "'.");
 		}
 		if (number_parameters == 2)
-			additional_output_parameter = output_parameters[1];
+			(output_type == SetQuery::CONTAINS_ELEMENT ? element_for_contains_check : inputstream_for_set_comparison) = output_parameters[1];
 	}
 	else
 	{
@@ -710,6 +790,21 @@ int execute_setop(int argc, char* argv[])
 	// use console as input when no file given
 	if (input_filenames.empty())
 		input_filenames.push_back("-");
+	
+	// console must not be used multiple times (= inputstream "-")
+	std::vector<std::string> list_of_inputstreams(input_filenames);
+	list_of_inputstreams.insert(list_of_inputstreams.cend(), setdifference_filenames.cbegin(), setdifference_filenames.cend());
+	if (!inputstream_for_set_comparison.empty())
+		list_of_inputstreams.push_back(inputstream_for_set_comparison);
+	bool found_console_as_input = false;
+	for (std::string const& inputstream : list_of_inputstreams)
+		if (inputstream == "-")
+		{
+			if (found_console_as_input)
+				return print_error("reading from standard input via '-' is only allowed once within the calling " PROGRAM_NAME " command.");
+			else
+				found_console_as_input = true;
+		}
 
 
 	// PROCESS CALCULATIONS IN THREE STEPS
@@ -800,29 +895,26 @@ int execute_setop(int argc, char* argv[])
 			"Resulting set is empty.\n",
 			"Resulting set is not empty.\n");
 	case SetQuery::CONTAINS_ELEMENT:
-	{
-		element_t& element_to_check = additional_output_parameter;
-		boost::trim_if(element_to_check, boost::is_any_of(input_opts.trim_characters));
+		boost::trim_if(element_for_contains_check, boost::is_any_of(input_opts.trim_characters));
 		return answer_query(
-			output_set.contains(element_to_check),
-			"\"" + element_to_check + "\" is contained in set.\n",
-			"Input does not contain element \"" + element_to_check + "\".\n");
-	}
+			output_set.contains(element_for_contains_check),
+			"\"" + element_for_contains_check + "\" is contained in set.\n",
+			"Input does not contain element \"" + element_for_contains_check + "\".\n");
 	case SetQuery::SET_EQUALITY:
 		return answer_query(
-			file_to_set(additional_output_parameter) == output_set,
-			"Resulting set is equal to input \"" + additional_output_parameter + "\".\n",
-			"Resulting set is not equal to input \"" + additional_output_parameter + "\".\n");
+			file_to_set(inputstream_for_set_comparison) == output_set,
+			"Resulting set is equal to input \"" + inputstream_for_set_comparison + "\".\n",
+			"Resulting set is not equal to input \"" + inputstream_for_set_comparison + "\".\n");
 	case SetQuery::SUBSET:
 		return answer_query(
-			std::ranges::includes(output_set, file_to_set(additional_output_parameter)),
-			"\"" + additional_output_parameter + "\" is a subset.\n",
-			"\"" + additional_output_parameter + "\" is not a subset.\n");
+			std::ranges::includes(output_set, file_to_set(inputstream_for_set_comparison)),
+			"\"" + inputstream_for_set_comparison + "\" is a subset.\n",
+			"\"" + inputstream_for_set_comparison + "\" is not a subset.\n");
 	case SetQuery::SUPERSET:
 		return answer_query(
-			std::ranges::includes(file_to_set(additional_output_parameter), output_set),
-			"\"" + additional_output_parameter + "\" is a superset.\n",
-			"\"" + additional_output_parameter + "\" is not a superset.\n");
+			std::ranges::includes(file_to_set(inputstream_for_set_comparison), output_set),
+			"\"" + inputstream_for_set_comparison + "\" is a superset.\n",
+			"\"" + inputstream_for_set_comparison + "\" is not a superset.\n");
 	default:
 		// never happens because all cases are handled above
 		return EXIT_FAILURE;
