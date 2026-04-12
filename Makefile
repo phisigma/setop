@@ -28,6 +28,11 @@ install: $(PROGNAME) man src/setop.bash
 	install $(PROGNAME).1 $(HELP)
 	install src/setop.bash $(BASHCOMPLETION)
 
+uninstall:
+	rm $(BIN)/$(PROGNAME) || true
+	rm $(HELP)/$(PROGNAME).1 || true
+	rm $(BASHCOMPLETION)/setop.bash || true
+
 man: $(PROGNAME)
 	help2man -n "make set of strings from input" -N -L en_US.UTF-8 ./$(PROGNAME) | gzip > $(PROGNAME).1
 
