@@ -588,7 +588,10 @@ int execute_setop(int argc, char* argv[])
 				"i. e. elements are non-negative integers\n"
 			PROGRAM_NAME " A.txt B.txt --combine symmetric-difference --input-separator [[:space:]-]"
 				"\n\t" "find all elements contained in either A or B, not both, where a whitespace"  R"( (i. e. \v \t \n \r \f or space) )"
-				"or a minus is interpreted as a separator between elements\n";
+				"or a minus is interpreted as a separator between elements\n\n"
+			
+			"For bug reports, use the issue tracker at\n"
+			"https://github.com/phisigma/setop.\n";
 
 		return EXIT_SUCCESS;
 	}
