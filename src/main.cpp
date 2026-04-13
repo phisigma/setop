@@ -41,7 +41,7 @@ You can find a copy of the GNU General Public License at <http://www.gnu.org/lic
 */
 
 #define PROGRAM_NAME "setop" ///< official name of program
-#define PROGRAM_VERSION "0.1" ///< version of setop
+#define PROGRAM_VERSION "0.2" ///< version of setop
 /** \brief used when query has negative result (e. g. element not part of input), but program flow has no (other) error */
 #define EXIT_QUERY_NEGATIVE 3
 static_assert((EXIT_QUERY_NEGATIVE != EXIT_SUCCESS) && (EXIT_QUERY_NEGATIVE != EXIT_FAILURE),
