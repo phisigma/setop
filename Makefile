@@ -11,6 +11,11 @@ BIN ?= $(DESTDIR)/usr/bin
 HELP ?= $(DESTDIR)/usr/share/man/man1
 BASHCOMPLETION ?= $(DESTDIR)/usr/share/bash-completion/completions
 
+# replace characters ' with \' so they are escaped and paths can be put within apostrophes later
+bin_directory = $(subst ','\'',$(BIN))
+help_directory = $(subst ','\'',$(HELP))
+bashcompletion_directory = $(subst ','\'',$(BASHCOMPLETION))
+
 
 all: $(PROGNAME) man
 
@@ -23,15 +28,15 @@ clean:
 	-rm -f $(PROGNAME).1.gz
 
 install: $(PROGNAME) man src/setop.bash
-	install -d $(BIN) $(HELP) $(BASHCOMPLETION)
-	install $(PROGNAME) $(BIN)
-	install $(PROGNAME).1.gz $(HELP)
-	install src/setop.bash $(BASHCOMPLETION)
+	install -d '$(bin_directory)' '$(help_directory)' '$(bashcompletion_directory)'
+	install $(PROGNAME) '$(bin_directory)'
+	install $(PROGNAME).1.gz '$(help_directory)'
+	install src/setop.bash '$(bashcompletion_directory)'
 
 uninstall:
-	rm $(BIN)/$(PROGNAME) || true
-	rm $(HELP)/$(PROGNAME).1.gz || true
-	rm $(BASHCOMPLETION)/setop.bash || true
+	rm '$(bin_directory)/$(PROGNAME)' || true
+	rm '$(help_directory)/$(PROGNAME).1.gz' || true
+	rm '$(bashcompletion_directory)/setop.bash' || true
 
 man: $(PROGNAME)
 	help2man -n "make set of strings from input" -N -L en_US.UTF-8 ./$(PROGNAME) | gzip > $(PROGNAME).1.gz
