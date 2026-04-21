@@ -1,7 +1,7 @@
 PROGNAME := setop
 MANPAGE := $(PROGNAME).1.gz
 
-.PHONY: all, clean
+.PHONY: all clean install uninstall documentation
 
 CXXFLAGS += -std=c++23 -O3
 LIBS += -lboost_program_options -lboost_regex
