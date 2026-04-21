@@ -1,4 +1,5 @@
 PROGNAME := setop
+MANPAGE := $(PROGNAME).1.gz
 
 .PHONY: all, clean
 
@@ -17,7 +18,7 @@ help_directory = $(subst ','\'',$(HELP))
 bashcompletion_directory = $(subst ','\'',$(BASHCOMPLETION))
 
 
-all: $(PROGNAME) man
+all: $(PROGNAME) $(MANPAGE)
 
 $(PROGNAME): $(SOURCES)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(SOURCES) $(LDFLAGS) $(LIBS) -o $(PROGNAME)
@@ -25,21 +26,21 @@ $(PROGNAME): $(SOURCES)
 clean:
 	@echo "Clean."
 	-rm -f $(PROGNAME)
-	-rm -f $(PROGNAME).1.gz
+	-rm -f $(MANPAGE)
 
-install: $(PROGNAME) man src/setop.bash
+install: $(PROGNAME) $(MANPAGE) src/setop.bash
 	install -d '$(bin_directory)' '$(help_directory)' '$(bashcompletion_directory)'
 	install $(PROGNAME) '$(bin_directory)'
-	install $(PROGNAME).1.gz '$(help_directory)'
+	install $(MANPAGE) '$(help_directory)'
 	install src/setop.bash '$(bashcompletion_directory)'
 
 uninstall:
 	rm '$(bin_directory)/$(PROGNAME)' || true
-	rm '$(help_directory)/$(PROGNAME).1.gz' || true
+	rm '$(help_directory)/$(MANPAGE)' || true
 	rm '$(bashcompletion_directory)/setop.bash' || true
 
-man: $(PROGNAME)
-	help2man -n "make set of strings from input" -N -L en_US.UTF-8 ./$(PROGNAME) | gzip > $(PROGNAME).1.gz
+$(MANPAGE): $(PROGNAME)
+	help2man -n "make set of strings from input" -N -L en_US.UTF-8 ./$(PROGNAME) | gzip > $(MANPAGE)
 
 documentation: $(SOURCES) doxygen-config
 	doxygen doxygen-config
