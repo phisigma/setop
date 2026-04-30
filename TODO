@@ -2,6 +2,9 @@
 TODO
 ====
 - remove deprecated options (maybe 5 or 10 years after introduction in 2026)
+- uniform code formatting (especially camel case, indentation style, and doxygen style)
+- correct sections in man file created by help2man
+- refactorization, especially smaller main.cpp
 
 
 =================
