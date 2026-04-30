@@ -15,22 +15,18 @@ You can find a copy of the GNU General Public License at <http://www.gnu.org/lic
 
 #include <iostream>
 #include <string>
-#include <set>
 #include <map>
 #include <vector>
-#include <stack>
 #include <regex>
-#include <fstream>
-#include <functional>
-#include <memory>
 #include <cstdlib>
 
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string/trim.hpp>
-#include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/predicate.hpp>
-#include <boost/regex.hpp>
 
+#include "BaseTypes.h"
+#include "SetCalculator.h"
+#include "FormulaParser.h"
 
 /**
 \file
@@ -51,32 +47,6 @@ static_assert((EXIT_QUERY_NEGATIVE != EXIT_SUCCESS) && (EXIT_QUERY_NEGATIVE != E
 enum class SetConcat : unsigned char { UNION, INTERSECTION, SYM_DIFFERENCE, FORMULA };
 /** \brief types of different return possibilities for program */
 enum class SetQuery : unsigned char { RETURN_SET, CARDINALITY, ISEMPTY, SUBSET, SUPERSET, CONTAINS_ELEMENT, SET_EQUALITY };
-
-using element_t = std::string; ///< basic type of element in sets, must base on character type char
-using el_comp_t = std::function<bool(element_t const&, element_t const&)>; ///< type of function for comparing elements
-/**
-\brief basic type for sets
-\details A hash set would be faster, but:
- - even with 1,000,000 elements only about with factor 1.7 or 1.8 (depending on several other influences)
- - no advantage in memory saving
- - output is not sorted (at least one more option necessary for letting user to decide if this is acceptable)
- - much more source code (sorted/unsorted output; overhead for case-insensitive hash function etc.)
-*/
-using set_t = std::set<element_t, el_comp_t>;
-
-/** \brief Encapsulates all options for reading and parsing input streams. */
-class InputOptions
-{
-public:
-	el_comp_t element_comp; ///< comparator for set elements (e. g. case-insensitive comparison)
-	bool include_empty_elements; ///< empty input elements are included instead of ignored
-	boost::regex input_element_regex; ///< regular expression describing an input element (use `boost` instead of `std` because `match_partial` is needed)
-	boost::regex input_separator_regex; ///< regular expression describing an input separator
-	std::string output_separator; ///< string elements shall be separated with in output
-	std::string trim_characters; ///< list of characters that shall be ignored in element at begin and end
-} input_opts;
-
-std::vector<std::string> input_filenames;
 
 
 /**
@@ -126,125 +96,6 @@ std::string unescape_sequence(std::string const& escape_seq)
 }
 
 
-std::map<std::string, set_t> inputstream_cache; // in case an input is needed more than once, do not parse input file again but cache it
-std::map<std::string, int> inputstream_to_usagecount; // should in general be 1 for all entries
-
-/**
-\brief Returns all elements from file as a set.
-\param filename name of input file with elements to parse
-*/
-set_t file_to_set(std::string const& filename)
-{
-	set_t result(input_opts.element_comp);
-	
-	// handle caching of input streams in case they are needed multiple times
-	std::map<std::string, int>::iterator usage_count = inputstream_to_usagecount.find(filename);
-	--usage_count->second;
-	std::map<std::string, set_t>::iterator cached_input_it = inputstream_cache.find(filename);
-	if (cached_input_it != inputstream_cache.end())
-	{
-		if (usage_count->second == 0)
-		{
-			result = std::move(cached_input_it->second); // not needed anymore
-		}
-		else
-			result = cached_input_it->second; // copy
-		return result;
-	}
-	
-	// set input stream (can be std::cin)
-	std::ifstream inputfile;
-	if (filename != "-")
-	{
-		inputfile.open(filename);
-		if (!inputfile)
-			throw std::runtime_error("input file '" + filename + "' could not be opened.");
-	}
-	std::istream& inputstream = (filename == "-" ? std::cin : inputfile);
-
-	// lambda for running adjust_element and inserting it right after (according to options)
-	auto adjust_and_insert_element = [&result](element_t el_str, bool check_element_regex)
-	{
-		if (!check_element_regex || input_opts.input_element_regex.empty() ||
-			boost::regex_match(el_str, input_opts.input_element_regex))
-		{
-			boost::trim_if(el_str, boost::is_any_of(input_opts.trim_characters));
-			if (!el_str.empty() || input_opts.include_empty_elements)
-				result.insert(std::move(el_str));
-		}
-	};
-
-	// general idea: parse input according to regular expression describing an element or a separator
-
-	bool use_separator_regex = input_opts.input_element_regex.empty();
-	boost::regex const& regex = (use_separator_regex ? input_opts.input_separator_regex : input_opts.input_element_regex);
-
-	// effect of value of initial buffer size is practically unmeasurable, so just take a nice value of form 2^n,
-	// at least it should be much bigger than expected size of elements
-	std::size_t buffersize = 4096;
-	std::size_t used_buffer = 0;
-	// use unique pointer instead of "plain" pointer so that there is no memory leak in case of exception
-	std::unique_ptr<char[]> buffer(new char[buffersize]);
-	do
-	{
-		inputstream.read(buffer.get() + used_buffer, buffersize - used_buffer);
-		char const* const buffer_end = buffer.get() + used_buffer + inputstream.gcount();
-		char const* buffer_handled_until = buffer.get();
-
-		// the whole following thing could be much easier by using a bidirectional input iterator here, but:
-		// do not do this because input "file" could be a named pipe, stream or similar (no backwards iterating would be possible!)
-		// so you have to manage the buffer (and release parts of it) yourself
-		// for a more efficient solution (hopefully in the near future) see <https://svn.boost.org/trac/boost/ticket/11776>
-		boost::cregex_iterator curr_match(buffer.get(), buffer_end, regex, boost::match_default | boost::match_partial);
-		// add element to set when ...
-		while (curr_match != boost::cregex_iterator() &&
-			curr_match->begin()->matched && // ... match is a full match and ...
-			(!inputstream || // ... when file is at end or ...
-			// (see next line) when match does not touch end of buffer (otherwise element could be longer, e. g. partial match)
-			!boost::regex_match(curr_match->begin()->first, buffer_end, regex, boost::match_default | boost::match_partial)))
-		{
-			if (use_separator_regex)
-			{
-				adjust_and_insert_element(element_t(buffer_handled_until, curr_match->begin()->first), true);
-				buffer_handled_until = curr_match->begin()->second;
-			}
-			else
-			{
-				adjust_and_insert_element(curr_match->str(), false);
-			}
-			++curr_match;
-		}
-		if (!use_separator_regex)
-			// the last match is always a partial match except full match touches buffer end (or buffer is empty)
-			// so mark begin of last match as new begin of buffer when filling it up in next round of do-while-loop
-			buffer_handled_until = (curr_match != boost::cregex_iterator() ? curr_match->begin()->first :
-				buffer_end);
-
-		used_buffer = buffer_end - buffer_handled_until;
-		if (buffer_handled_until == buffer.get())
-		{
-			// if current element fills the whole buffer, buffer is too small and thus doubled
-			buffersize *= 2;
-			std::unique_ptr<char[]> new_buffer(new char[buffersize]);
-			std::memmove(new_buffer.get(), buffer_handled_until, used_buffer);
-			buffer = std::move(new_buffer);
-		}
-		else
-		{
-			// move the rest of new element (buffer_handled_until) to beginning of buffer and mark it as used
-			std::memmove(buffer.get(), buffer_handled_until, used_buffer);
-		}
-	} while (inputstream);
-
-	if (use_separator_regex && used_buffer > 0)
-		adjust_and_insert_element(element_t(buffer.get(), used_buffer), true);
-
-	if (usage_count->second > 0)
-		inputstream_cache[filename] = result; // cache result because it is needed later
-	
-	return result;
-}
-
 /**
 \brief Prints complete warning message to console `std::cerr` including hint, that this is a warning.
 \param warning_message warning message without new line at end
@@ -276,187 +127,6 @@ inline int print_unsupported_parameter_error(std::string const& option, std::str
 	return print_error("option '--" + option + "' does not support a parameter '" + parameter + "'.");
 }
 
-class invalid_formula_exception : public std::invalid_argument
-{
-public:
-	invalid_formula_exception(std::string const& error_message)
-		: invalid_argument(error_message) {}
-};
-
-enum class SetCombineOperation
-{
-	Intersection,
-	SymmetricDiff,
-	Union,
-	SetDifference
-};
-
-/// Combine `output_set` with `next_input` via `operation` and store result in `output_set`.
-void combine_with_next_set(set_t& output_set, SetCombineOperation operation, set_t&& next_input)
-{
-	switch (operation)
-	{
-		case SetCombineOperation::Intersection:
-		{
-			set_t intersect(input_opts.element_comp);
-			for (element_t const& el : output_set)
-				if (next_input.contains(el))
-					intersect.insert(el);
-
-			output_set = std::move(intersect);
-			break;
-		}
-		case SetCombineOperation::SymmetricDiff:
-			for (element_t const& el : next_input)
-			{
-				set_t::const_iterator it = output_set.find(el);
-				if (it != output_set.end())
-					output_set.erase(it);
-				else
-					output_set.insert(el);
-			}
-			break;
-		case SetCombineOperation::Union:
-			output_set.merge(std::move(next_input));
-			break;
-		case SetCombineOperation::SetDifference:
-			for (element_t const& el : next_input)
-				output_set.erase(el);
-			break;
-		default: // can never happen
-			assert(false && "Internal error, a set comination type is not covered.");
-	}
-}
-
-/**
-\brief Move `formula_it` forward so it shows to non-whitespace (= tab, space, new line).
-\return `true` if next character is valid, `false` if string is at end (= null character)
-*/
-bool goto_next_nonwhitespace(std::string::const_iterator& formula_it)
-{
-	while (*formula_it && std::isspace(*formula_it))
-		++formula_it;
-	return *formula_it;
-}
-
-set_t evaluate_formula(std::string::const_iterator& formula_it, bool within_brackets = false); // needed forward declaration
-
-/**
-\brief Calculate next complete term represented by input stream index or by term in brackets.
-\details E. g. "3 & 4" results in set of input stream 3 and `formula_it` is moved to character after '&',
-	whereas "(3 & 4)" would include calculation of intersection and set `formula_it` to end of string.
-	A term is always expected, i. e. formula must start with number or opening bracket and an empty string triggers an exception.
-\param formula_it iterator of formula where evaluation shall start, is moved forward to next unread character
-\return set of evaluated term
-*/
-set_t evaluate_next_term(std::string::const_iterator& formula_it)
-{
-	set_t result;
-	if (!goto_next_nonwhitespace(formula_it))
-		throw invalid_formula_exception("a term is missing");
-	if (*formula_it == '(')
-	{
-		++formula_it;
-		result = evaluate_formula(formula_it, true);
-	}
-	else
-	{
-		std::string::size_type number_read_chars;
-		unsigned long inputstream_index;
-		try
-		{
-			inputstream_index = std::stoul(&*formula_it, &number_read_chars); // throws std::invalid_argument or std::out_of_range
-		}
-		catch (std::logic_error const&)
-		{
-			throw invalid_formula_exception("a positive integer or opening bracket is expected");
-		}
-		if (inputstream_index < 1 || inputstream_index > input_filenames.size())
-			throw invalid_formula_exception("input stream indices should be in the range from 1 to " + std::to_string(input_filenames.size()));
-		result = file_to_set(input_filenames[inputstream_index - 1]);
-		formula_it += number_read_chars;
-	}
-	return result;
-}
-
-/**
-\brief Calculate resulting set from formula.
-\param formula_it iterator of formula where evaluation shall start, is moved forward to next unread character
-\param within_brackets for recursively evaluating "subformulas" within brackets; when true, stops directly after closing bracket and returns
-\return set of evaluated formula
-*/
-set_t evaluate_formula(std::string::const_iterator& formula_it, bool within_brackets)
-{
-	// STEP A: a formula contains at least one term, so read it
-	set_t result = evaluate_next_term(formula_it);
-
-	class OperationSetPair
-	{
-	public:
-		SetCombineOperation operation;
-		set_t set;
-	};
-	std::stack<OperationSetPair> op_set_pairs;
-	auto shorten_stack = [&]() // remove top element of stack while letting total value of all operations unchanged
-	{
-		OperationSetPair top_term = std::move(op_set_pairs.top());
-		op_set_pairs.pop();
-		set_t& base_term = (op_set_pairs.empty() ? result : op_set_pairs.top().set);
-		combine_with_next_set(base_term, top_term.operation, std::move(top_term.set));
-	};
-
-	while (goto_next_nonwhitespace(formula_it))
-	{
-		// either STEP B: return from recursive call when end of subformula within brackets is reached
-		if (*formula_it == ')')
-		{
-			if (!within_brackets)
-				throw invalid_formula_exception("found closing bracket without opening bracket");
-			++formula_it;
-			within_brackets = false;
-			break;
-		}
-
-		// or STEP C
-		// STEP C-1: parse operation
-		std::map<char, SetCombineOperation> const combineoperation_by_operator = {
-			{'&', SetCombineOperation::Intersection},
-			{'^', SetCombineOperation::SymmetricDiff},
-			{'|', SetCombineOperation::Union},
-			{'-', SetCombineOperation::SetDifference}
-		};
-		std::map<char, SetCombineOperation>::const_iterator next_operation = combineoperation_by_operator.find(*formula_it);
-		if (next_operation == combineoperation_by_operator.end())
-			throw invalid_formula_exception("an operator like &, |, ^, or - is missing");
-		++formula_it;
-
-		// STEP C-2: parse value
-		set_t next_set = evaluate_next_term(formula_it);
-
-		// STEP C-3: handle new value-operation-pair
-		if (next_operation->second == SetCombineOperation::Intersection) // has highest priority, calculate immediately for better performance
-		{
-			set_t& base_term = (op_set_pairs.empty() ? result : op_set_pairs.top().set);
-			combine_with_next_set(base_term, next_operation->second, std::move(next_set));
-		}
-		else // try to merge elements from stack when their operation is as least as important as current operation
-		{
-			while (!op_set_pairs.empty() && next_operation->second >= op_set_pairs.top().operation)
-				shorten_stack();
-			op_set_pairs.push(OperationSetPair{.operation = next_operation->second, .set = std::move(next_set)});
-		}
-	}
-
-	if (within_brackets)
-		throw invalid_formula_exception("a closing bracket is missing");
-
-	// STEP D: handle remaining stack of operations and sets
-	while (!op_set_pairs.empty())
-		shorten_stack();
-
-	return result;
-}
-
 /**
 \brief Main function of program: take command line options and arguments and execute output.
 \throws std::runtime_error
@@ -464,10 +134,11 @@ set_t evaluate_formula(std::string::const_iterator& formula_it, bool within_brac
 int execute_setop(int argc, char* argv[])
 {
 	// needed variables, mainly options and arguments from command line
+	InputOptions input_opts;
 	bool quiet, verbose, ignore_case;
 	std::string formula, inputstream_for_set_comparison, separator_format, element_format;
 	element_t element_for_contains_check;
-	std::vector<std::string> combine_parameters, setdifference_filenames, output_parameters;
+	std::vector<std::string> combine_parameters, input_filenames, setdifference_filenames, output_parameters;
 
 
 	// PARSE COMMAND LINE
@@ -619,12 +290,16 @@ int execute_setop(int argc, char* argv[])
 		quiet = verbose = false;
 	}
 	
+	std::map<std::string, int> inputstream_to_usagecount; // should in general be 1 for all entries
+	
 	// report and delete redundant entries for set differences
 	std::map<std::string, int> setdifference_streams_usagecount;
 	for (std::string const& inputstream : setdifference_filenames)
 		++setdifference_streams_usagecount[inputstream];
 	for (auto const& [setdifference_stream, usage_count] : setdifference_streams_usagecount)
 	{
+		++inputstream_to_usagecount[setdifference_stream];
+		
 		if (usage_count > 1)
 		{
 			print_warning("option '--" + std::string(opt_map.contains("subtract") ? "subtract" : "difference") + "' contains input stream '"
@@ -665,7 +340,7 @@ int execute_setop(int argc, char* argv[])
 				"option '--combine' with parameter '" + combine_type_str + "' needs an additional parameter." :
 				"option '--combine' with parameter '" + combine_type_str + "' does not need additional parameters. Found unneeded value '" + combine_parameters[2] + "'.");
 		}
-		if (number_parameters == 2)
+		if (setconcat_type == SetConcat::FORMULA)
 		{
 			formula = combine_parameters[1];
 			
@@ -689,10 +364,6 @@ int execute_setop(int argc, char* argv[])
 				for (auto const& [inputstream_number, usagecount] : inputstream_number_to_usagecount)
 					inputstream_to_usagecount[input_filenames[inputstream_number - 1]] += usagecount;
 			}
-			for (std::string const& setdifference_filename : setdifference_filenames)
-				++inputstream_to_usagecount[setdifference_filename];
-			if (!inputstream_for_set_comparison.empty())
-				++inputstream_to_usagecount[inputstream_for_set_comparison];
 		}
 	}
 	else
@@ -702,6 +373,12 @@ int execute_setop(int argc, char* argv[])
 			opt_map.contains("symmetric-difference") ? SetConcat::SYM_DIFFERENCE :
 			SetConcat::UNION;
 	}
+	
+	if (setconcat_type != SetConcat::FORMULA)
+		for (std::string const& input_filename : input_filenames)
+			++inputstream_to_usagecount[input_filename];
+	if (!inputstream_for_set_comparison.empty())
+		++inputstream_to_usagecount[inputstream_for_set_comparison];
 
 	if (opt_map.count("difference") + opt_map.count("subtract") > 1)
 		return print_error("the options '--difference' and '--subtract' must not be combined.");
@@ -814,15 +491,17 @@ int execute_setop(int argc, char* argv[])
 
 	// STEP 1/3: execute all commutative set combinations (union, intersection, symmetric difference) or formula
 
+	SetCalculator set_calculator(input_opts, inputstream_to_usagecount);
 	set_t output_set(input_opts.element_comp);
 	if (setconcat_type == SetConcat::FORMULA)
 	{
+		FormulaParser formula_parser(set_calculator, input_filenames);
 		std::string::const_iterator formula_it = formula.cbegin();
 		try
 		{
-			output_set = evaluate_formula(formula_it);
+			output_set = formula_parser.parseCompleteTerm(formula_it, formula.cend());
 		}
-		catch (invalid_formula_exception const& formula_exception)
+		catch (InvalidTermException const& formula_exception)
 		{
 			return print_error(std::string("invalid formula, ") + formula_exception.what() + "\n" + formula + "\n"
 				+ std::string(formula_it - formula.cbegin(), ' ') + "^");
@@ -834,14 +513,14 @@ int execute_setop(int argc, char* argv[])
 		{
 			if (curr_fn_it == input_filenames.cbegin()) // if it is the first input stream
 			{
-				output_set = file_to_set(*curr_fn_it);
+				output_set = set_calculator.inputStreamToSet(*curr_fn_it);
 			}
 			else
 			{
 				SetCombineOperation operation = setconcat_type == SetConcat::UNION ? SetCombineOperation::Union :
 					setconcat_type == SetConcat::INTERSECTION ? SetCombineOperation::Intersection :
 					SetCombineOperation::SymmetricDiff;
-				combine_with_next_set(output_set, operation, file_to_set(*curr_fn_it));
+				set_calculator.combine(output_set, operation, set_calculator.inputStreamToSet(*curr_fn_it));
 			}
 		}
 	}
@@ -851,7 +530,7 @@ int execute_setop(int argc, char* argv[])
 
 	for (std::string const& filename : setdifference_filenames)
 	{
-		combine_with_next_set(output_set, SetCombineOperation::SetDifference, file_to_set(filename));
+		set_calculator.combine(output_set, SetCombineOperation::SetDifference, set_calculator.inputStreamToSet(filename));
 	}
 
 
@@ -905,17 +584,17 @@ int execute_setop(int argc, char* argv[])
 			"Input does not contain element \"" + element_for_contains_check + "\".\n");
 	case SetQuery::SET_EQUALITY:
 		return answer_query(
-			file_to_set(inputstream_for_set_comparison) == output_set,
+			set_calculator.inputStreamToSet(inputstream_for_set_comparison) == output_set,
 			"Resulting set is equal to input \"" + inputstream_for_set_comparison + "\".\n",
 			"Resulting set is not equal to input \"" + inputstream_for_set_comparison + "\".\n");
 	case SetQuery::SUBSET:
 		return answer_query(
-			std::ranges::includes(output_set, file_to_set(inputstream_for_set_comparison)),
+			std::ranges::includes(output_set, set_calculator.inputStreamToSet(inputstream_for_set_comparison)),
 			"\"" + inputstream_for_set_comparison + "\" is a subset.\n",
 			"\"" + inputstream_for_set_comparison + "\" is not a subset.\n");
 	case SetQuery::SUPERSET:
 		return answer_query(
-			std::ranges::includes(file_to_set(inputstream_for_set_comparison), output_set),
+			std::ranges::includes(set_calculator.inputStreamToSet(inputstream_for_set_comparison), output_set),
 			"\"" + inputstream_for_set_comparison + "\" is a superset.\n",
 			"\"" + inputstream_for_set_comparison + "\" is not a superset.\n");
 	default:

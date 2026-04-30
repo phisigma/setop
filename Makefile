@@ -5,7 +5,9 @@ MANPAGE := $(PROGNAME).1.gz
 
 CXXFLAGS += -std=c++23 -O3
 LIBS += -lboost_program_options -lboost_regex
-SOURCES = src/main.cpp
+SOURCES = main.cpp FormulaParser.cpp SetCalculator.cpp TermParser.cpp
+SOURCES_FULLNAME = $(addprefix src/,$(SOURCES))
+OBJECTS = $(SOURCES:.cpp=.o)
 
 # where to put executable and manpage on 'make install'
 BIN ?= $(DESTDIR)/usr/bin
@@ -20,12 +22,16 @@ bashcompletion_directory = $(subst ','\'',$(BASHCOMPLETION))
 
 all: $(PROGNAME) $(MANPAGE)
 
-$(PROGNAME): $(SOURCES)
-	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(SOURCES) $(LDFLAGS) $(LIBS) -o $(PROGNAME)
+$(PROGNAME): $(OBJECTS)
+	$(CXX) $(LDFLAGS) $(OBJECTS) $(LIBS) -o $(PROGNAME)
+
+%.o: src/%.cpp
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
 clean:
 	@echo "Clean."
 	-rm -f $(PROGNAME)
+	-rm -f $(OBJECTS)
 	-rm -f $(MANPAGE)
 
 install: $(PROGNAME) $(MANPAGE) src/setop.bash
@@ -42,5 +48,5 @@ uninstall:
 $(MANPAGE): $(PROGNAME)
 	help2man -n "make set of strings from input" -N -L en_US.UTF-8 ./$(PROGNAME) | gzip > $(MANPAGE)
 
-documentation: $(SOURCES) doxygen-config
+documentation: $(SOURCES_FULLNAME) doxygen-config
 	doxygen doxygen-config
